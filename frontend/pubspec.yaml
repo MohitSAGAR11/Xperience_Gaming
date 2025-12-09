@@ -1,0 +1,67 @@
+name: xperience_gaming
+description: Gaming Cafe Booking App - Book PC stations and consoles at gaming cafes near you.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management - Riverpod
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+
+  # Navigation
+  go_router: ^13.0.0
+
+  # Network & API
+  dio: ^5.4.0
+  
+  # Local Storage
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+
+  # Maps & Location
+  google_maps_flutter: ^2.5.0
+  geolocator: ^10.1.0
+  geocoding: ^2.1.1
+
+  # UI Components
+  cached_network_image: ^3.3.1
+  flutter_svg: ^2.0.9
+  shimmer: ^3.0.0
+  flutter_rating_bar: ^4.0.1
+  
+  # Fonts & Icons
+  google_fonts: ^6.1.0
+  iconsax: ^0.0.8
+  
+  # Utils
+  intl: ^0.18.1
+  url_launcher: ^6.2.2
+  
+  # Payment (Razorpay - for later)
+  # razorpay_flutter: ^1.3.6
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  riverpod_generator: ^2.3.9
+  build_runner: ^2.4.8
+
+flutter:
+  uses-material-design: true
+
+  # Assets removed - add back when you have actual images/icons
+  # assets:
+  #   - assets/images/
+  #   - assets/icons/
+
+  # Fonts loaded via google_fonts package instead of local files
+
