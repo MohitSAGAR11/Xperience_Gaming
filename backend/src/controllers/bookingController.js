@@ -746,15 +746,36 @@ const getCafeBookings = async (req, res) => {
       query = query.where('status', '==', status);
     }
 
-    const snapshot = await query
-      .orderBy('bookingDate', 'asc')
-      .orderBy('startTime', 'asc')
-      .get();
+    let snapshot;
+    let needsClientSort = false;
+
+    try {
+      // Try with orderBy first (requires composite index)
+      snapshot = await query
+        .orderBy('bookingDate', 'asc')
+        .orderBy('startTime', 'asc')
+        .get();
+    } catch (indexError) {
+      // Fallback: Query without orderBy and sort client-side
+      console.log('Index not ready for getCafeBookings, using fallback query');
+      snapshot = await query.get();
+      needsClientSort = true;
+    }
 
     let bookings = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
+
+    // Sort client-side if index wasn't available
+    if (needsClientSort) {
+      bookings.sort((a, b) => {
+        // Sort by bookingDate asc, then startTime asc
+        const dateCompare = (a.bookingDate || '').localeCompare(b.bookingDate || '');
+        if (dateCompare !== 0) return dateCompare;
+        return (a.startTime || '').localeCompare(b.startTime || '');
+      });
+    }
 
     // Pagination
     const pageNum = parseInt(page);

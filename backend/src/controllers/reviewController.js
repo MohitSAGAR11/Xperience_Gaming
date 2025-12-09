@@ -180,25 +180,58 @@ const getCafeReviews = async (req, res) => {
       .where('cafeId', '==', cafeId)
       .where('isVisible', '==', true);
 
-    // Apply sorting
-    if (sort === 'highest') {
-      query = query.orderBy('rating', 'desc');
-    } else if (sort === 'lowest') {
-      query = query.orderBy('rating', 'asc');
-    } else if (sort === 'helpful') {
-      query = query.orderBy('helpfulCount', 'desc');
-    } else {
-      // Default: most recent
-      query = query.orderBy('createdAt', 'desc');
+    let snapshot;
+    let needsClientSort = false;
+    let sortField = 'createdAt';
+    let sortDirection = 'desc';
+
+    try {
+      // Apply sorting (requires composite indexes)
+      if (sort === 'highest') {
+        query = query.orderBy('rating', 'desc');
+        sortField = 'rating';
+      } else if (sort === 'lowest') {
+        query = query.orderBy('rating', 'asc');
+        sortField = 'rating';
+        sortDirection = 'asc';
+      } else if (sort === 'helpful') {
+        query = query.orderBy('helpfulCount', 'desc');
+        sortField = 'helpfulCount';
+      } else {
+        // Default: most recent
+        query = query.orderBy('createdAt', 'desc');
+      }
+      
+      snapshot = await query.get();
+    } catch (indexError) {
+      // Fallback: Query without orderBy and sort client-side
+      console.log('Index not ready for getCafeReviews, using fallback query');
+      snapshot = await db.collection('reviews')
+        .where('cafeId', '==', cafeId)
+        .where('isVisible', '==', true)
+        .get();
+      needsClientSort = true;
     }
 
-    const snapshot = await query.get();
     let reviews = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt,
       updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : doc.data().updatedAt
     }));
+
+    // Sort client-side if index wasn't available
+    if (needsClientSort) {
+      reviews.sort((a, b) => {
+        const aVal = a[sortField] || 0;
+        const bVal = b[sortField] || 0;
+        if (sortDirection === 'desc') {
+          return bVal > aVal ? 1 : bVal < aVal ? -1 : 0;
+        } else {
+          return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+        }
+      });
+    }
 
     // Pagination
     const pageNum = parseInt(page);
@@ -408,16 +441,38 @@ const getMyReviews = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const snapshot = await db.collection('reviews')
-      .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .get();
+    let snapshot;
+    let needsClientSort = false;
 
-    const reviews = snapshot.docs.map(doc => ({
+    try {
+      // Try with orderBy first (requires composite index)
+      snapshot = await db.collection('reviews')
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (indexError) {
+      // Fallback: Query without orderBy and sort client-side
+      console.log('Index not ready for getMyReviews, using fallback query');
+      snapshot = await db.collection('reviews')
+        .where('userId', '==', userId)
+        .get();
+      needsClientSort = true;
+    }
+
+    let reviews = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt
     }));
+
+    // Sort client-side if index wasn't available
+    if (needsClientSort) {
+      reviews.sort((a, b) => {
+        const dateA = a.createdAt || new Date(0);
+        const dateB = b.createdAt || new Date(0);
+        return dateB - dateA; // Descending order
+      });
+    }
 
     // Fetch cafe data for each review
     const reviewsWithCafe = await Promise.all(
