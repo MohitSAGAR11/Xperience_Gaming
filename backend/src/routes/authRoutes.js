@@ -1,31 +1,22 @@
 const express = require('express');
 const { body } = require('express-validator');
 const { 
-  register, 
-  login,
+  createProfile,
   logout,
   getMe, 
   updateProfile, 
   changePassword 
 } = require('../controllers/authController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, protectNewUser } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
 // Validation rules
-const registerValidation = [
+const createProfileValidation = [
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
     .isLength({ min: 2, max: 100 }).withMessage('Name must be between 2 and 100 characters'),
-  body('email')
-    .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Please provide a valid email')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty().withMessage('Password is required')
-    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('role')
     .optional()
     .isIn(['client', 'owner']).withMessage('Role must be either client or owner'),
@@ -34,25 +25,21 @@ const registerValidation = [
     .trim()
 ];
 
-const loginValidation = [
-  body('email')
-    .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Please provide a valid email')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty().withMessage('Password is required')
+const changePasswordValidation = [
+  body('newPassword')
+    .notEmpty().withMessage('New password is required')
+    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
 ];
 
-// Public routes
-router.post('/register', registerValidation, register);
-router.post('/login', loginValidation, login);
-
 // Protected routes
+// Note: Authentication (register/login) is handled by Firebase Auth on frontend
+// This endpoint creates the user profile in Firestore after Firebase Auth registration
+// Uses protectNewUser since the user doesn't exist in Firestore yet
+router.post('/create-profile', protectNewUser, createProfileValidation, createProfile);
 router.get('/me', protect, getMe);
 router.post('/logout', protect, logout);
 router.put('/profile', protect, updateProfile);
-router.put('/password', protect, changePassword);
+router.put('/password', protect, changePasswordValidation, changePassword);
 
 module.exports = router;
 

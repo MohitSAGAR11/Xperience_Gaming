@@ -1,6 +1,52 @@
-const { Review, Cafe, User, Booking } = require('../models');
-const { Op } = require('sequelize');
-const { sequelize } = require('../config/db');
+const { db } = require('../config/firebase');
+const { validationResult } = require('express-validator');
+
+/**
+ * Helper function to calculate and update cafe rating
+ */
+const updateCafeRating = async (cafeId) => {
+  const reviewsSnapshot = await db.collection('reviews')
+    .where('cafeId', '==', cafeId)
+    .where('isVisible', '==', true)
+    .get();
+
+  const reviews = reviewsSnapshot.docs.map(doc => doc.data());
+  
+  if (reviews.length === 0) {
+    await db.collection('cafes').doc(cafeId).update({
+      rating: 0,
+      totalReviews: 0
+    });
+    return;
+  }
+
+  const totalRating = reviews.reduce((sum, review) => sum + (review.rating || 0), 0);
+  const avgRating = totalRating / reviews.length;
+  const totalReviews = reviews.length;
+
+  await db.collection('cafes').doc(cafeId).update({
+    rating: Math.round(avgRating * 10) / 10, // Round to 1 decimal place
+    totalReviews
+  });
+};
+
+/**
+ * Helper function to get cafe data
+ */
+const getCafeData = async (cafeId) => {
+  const cafeDoc = await db.collection('cafes').doc(cafeId).get();
+  if (!cafeDoc.exists) return null;
+  return { id: cafeDoc.id, ...cafeDoc.data() };
+};
+
+/**
+ * Helper function to get user data
+ */
+const getUserData = async (userId) => {
+  const userDoc = await db.collection('users').doc(userId).get();
+  if (!userDoc.exists) return null;
+  return { id: userDoc.id, ...userDoc.data() };
+};
 
 /**
  * @desc    Create a review for a cafe
@@ -8,9 +54,15 @@ const { sequelize } = require('../config/db');
  * @access  Private (Client only)
  */
 const createReview = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
     const { cafeId, rating, comment, title } = req.body;
     const userId = req.user.id;
 
@@ -23,7 +75,7 @@ const createReview = async (req, res) => {
     }
 
     // Check if cafe exists
-    const cafe = await Cafe.findByPk(cafeId);
+    const cafe = await getCafeData(cafeId);
     if (!cafe) {
       return res.status(404).json({
         success: false,
@@ -32,11 +84,13 @@ const createReview = async (req, res) => {
     }
 
     // Check if user has already reviewed this cafe
-    const existingReview = await Review.findOne({
-      where: { userId, cafeId }
-    });
+    const existingReviewSnapshot = await db.collection('reviews')
+      .where('userId', '==', userId)
+      .where('cafeId', '==', cafeId)
+      .limit(1)
+      .get();
 
-    if (existingReview) {
+    if (!existingReviewSnapshot.empty) {
       return res.status(400).json({
         success: false,
         message: 'You have already reviewed this cafe. You can update your existing review.'
@@ -44,68 +98,70 @@ const createReview = async (req, res) => {
     }
 
     // Optional: Check if user has visited (booked) the cafe
-    const hasBooking = await Booking.findOne({
-      where: {
+    const bookingSnapshot = await db.collection('bookings')
+      .where('userId', '==', userId)
+      .where('cafeId', '==', cafeId)
+      .where('status', '==', 'completed')
+      .limit(1)
+      .get();
+    const hasBooking = !bookingSnapshot.empty;
+
+    // Use transaction to create review and update cafe rating atomically
+    const reviewRef = db.collection('reviews').doc();
+    
+    await db.runTransaction(async (transaction) => {
+      // Create the review
+      const reviewData = {
         userId,
         cafeId,
-        status: 'completed'
-      }
+        rating: parseInt(rating),
+        comment: comment || null,
+        title: title || null,
+        isVisible: true,
+        helpfulCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      transaction.set(reviewRef, reviewData);
+
+      // Update cafe rating (will be recalculated)
+      // We'll recalculate after transaction commits
     });
 
-    // Create the review
-    const review = await Review.create({
-      userId,
-      cafeId,
-      rating,
-      comment: comment || null,
-      title: title || null
-    }, { transaction });
-
-    // Update cafe's average rating and total reviews
-    const reviewStats = await Review.findOne({
-      where: { cafeId, isVisible: true },
-      attributes: [
-        [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'totalReviews']
-      ],
-      transaction
-    });
-
-    await Cafe.update({
-      rating: parseFloat(reviewStats.dataValues.avgRating) || 0,
-      totalReviews: parseInt(reviewStats.dataValues.totalReviews) || 0
-    }, {
-      where: { id: cafeId },
-      transaction
-    });
-
-    await transaction.commit();
+    // Recalculate cafe rating after transaction
+    await updateCafeRating(cafeId);
 
     // Fetch the created review with user info
-    const createdReview = await Review.findByPk(review.id, {
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'name', 'avatar']
-      }]
-    });
+    const reviewDoc = await reviewRef.get();
+    const reviewData = reviewDoc.data();
+    const user = await getUserData(userId);
+
+    const review = {
+      id: reviewDoc.id,
+      ...reviewData,
+      user: user ? {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar
+      } : null
+    };
 
     res.status(201).json({
       success: true,
       message: 'Review submitted successfully',
       data: {
-        review: createdReview,
-        hasVerifiedBooking: !!hasBooking
+        review,
+        hasVerifiedBooking: hasBooking
       }
     });
 
   } catch (error) {
-    await transaction.rollback();
     console.error('Create review error:', error);
     res.status(500).json({
       success: false,
       message: 'Error creating review',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -120,56 +176,77 @@ const getCafeReviews = async (req, res) => {
     const { cafeId } = req.params;
     const { page = 1, limit = 10, sort = 'recent' } = req.query;
 
-    // Build sort order
-    let order = [['createdAt', 'DESC']]; // Default: most recent
-    if (sort === 'highest') order = [['rating', 'DESC']];
-    if (sort === 'lowest') order = [['rating', 'ASC']];
-    if (sort === 'helpful') order = [['helpfulCount', 'DESC']];
+    let query = db.collection('reviews')
+      .where('cafeId', '==', cafeId)
+      .where('isVisible', '==', true);
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    // Apply sorting
+    if (sort === 'highest') {
+      query = query.orderBy('rating', 'desc');
+    } else if (sort === 'lowest') {
+      query = query.orderBy('rating', 'asc');
+    } else if (sort === 'helpful') {
+      query = query.orderBy('helpfulCount', 'desc');
+    } else {
+      // Default: most recent
+      query = query.orderBy('createdAt', 'desc');
+    }
 
-    const { count, rows: reviews } = await Review.findAndCountAll({
-      where: {
-        cafeId,
-        isVisible: true
-      },
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'name', 'avatar']
-      }],
-      order,
-      limit: parseInt(limit),
-      offset
-    });
+    const snapshot = await query.get();
+    let reviews = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt,
+      updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : doc.data().updatedAt
+    }));
+
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
+    const total = reviews.length;
+    reviews = reviews.slice(offset, offset + limitNum);
+
+    // Fetch user data for each review
+    const reviewsWithUser = await Promise.all(
+      reviews.map(async (review) => {
+        const user = await getUserData(review.userId);
+        return {
+          ...review,
+          user: user ? {
+            id: user.id,
+            name: user.name,
+            avatar: user.avatar
+          } : null
+        };
+      })
+    );
 
     // Get rating distribution
-    const ratingDistribution = await Review.findAll({
-      where: { cafeId, isVisible: true },
-      attributes: [
-        'rating',
-        [sequelize.fn('COUNT', sequelize.col('rating')), 'count']
-      ],
-      group: ['rating'],
-      raw: true
-    });
+    const allReviewsSnapshot = await db.collection('reviews')
+      .where('cafeId', '==', cafeId)
+      .where('isVisible', '==', true)
+      .get();
 
-    // Format distribution
+    const allReviews = allReviewsSnapshot.docs.map(doc => doc.data());
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    ratingDistribution.forEach(r => {
-      distribution[r.rating] = parseInt(r.count);
+    allReviews.forEach(review => {
+      const rating = review.rating;
+      if (rating >= 1 && rating <= 5) {
+        distribution[rating] = (distribution[rating] || 0) + 1;
+      }
     });
 
     res.json({
       success: true,
       data: {
-        reviews,
+        reviews: reviewsWithUser,
         ratingDistribution: distribution,
         pagination: {
-          total: count,
-          page: parseInt(page),
-          pages: Math.ceil(count / parseInt(limit)),
-          limit: parseInt(limit)
+          total,
+          page: pageNum,
+          pages: Math.ceil(total / limitNum),
+          limit: limitNum
         }
       }
     });
@@ -179,7 +256,7 @@ const getCafeReviews = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching reviews',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -190,21 +267,21 @@ const getCafeReviews = async (req, res) => {
  * @access  Private (Review owner only)
  */
 const updateReview = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  
   try {
     const { id } = req.params;
     const { rating, comment, title } = req.body;
     const userId = req.user.id;
 
-    const review = await Review.findByPk(id);
+    const reviewDoc = await db.collection('reviews').doc(id).get();
 
-    if (!review) {
+    if (!reviewDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Review not found'
       });
     }
+
+    const review = reviewDoc.data();
 
     // Check ownership
     if (review.userId !== userId) {
@@ -223,40 +300,33 @@ const updateReview = async (req, res) => {
     }
 
     // Update review
-    await review.update({
-      rating: rating || review.rating,
-      comment: comment !== undefined ? comment : review.comment,
-      title: title !== undefined ? title : review.title
-    }, { transaction });
+    const updateData = {
+      updatedAt: new Date()
+    };
+
+    if (rating !== undefined) updateData.rating = parseInt(rating);
+    if (comment !== undefined) updateData.comment = comment;
+    if (title !== undefined) updateData.title = title;
+
+    await db.collection('reviews').doc(id).update(updateData);
 
     // Update cafe's average rating
-    const reviewStats = await Review.findOne({
-      where: { cafeId: review.cafeId, isVisible: true },
-      attributes: [
-        [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'totalReviews']
-      ],
-      transaction
-    });
-
-    await Cafe.update({
-      rating: parseFloat(reviewStats.dataValues.avgRating) || 0,
-      totalReviews: parseInt(reviewStats.dataValues.totalReviews) || 0
-    }, {
-      where: { id: review.cafeId },
-      transaction
-    });
-
-    await transaction.commit();
+    await updateCafeRating(review.cafeId);
 
     // Fetch updated review
-    const updatedReview = await Review.findByPk(id, {
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'name', 'avatar']
-      }]
-    });
+    const updatedDoc = await db.collection('reviews').doc(id).get();
+    const updatedReviewData = updatedDoc.data();
+    const user = await getUserData(userId);
+
+    const updatedReview = {
+      id: updatedDoc.id,
+      ...updatedReviewData,
+      user: user ? {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar
+      } : null
+    };
 
     res.json({
       success: true,
@@ -265,12 +335,11 @@ const updateReview = async (req, res) => {
     });
 
   } catch (error) {
-    await transaction.rollback();
     console.error('Update review error:', error);
     res.status(500).json({
       success: false,
       message: 'Error updating review',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -281,20 +350,20 @@ const updateReview = async (req, res) => {
  * @access  Private (Review owner or Admin)
  */
 const deleteReview = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const review = await Review.findByPk(id);
+    const reviewDoc = await db.collection('reviews').doc(id).get();
 
-    if (!review) {
+    if (!reviewDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Review not found'
       });
     }
+
+    const review = reviewDoc.data();
 
     // Check ownership
     if (review.userId !== userId) {
@@ -305,27 +374,15 @@ const deleteReview = async (req, res) => {
     }
 
     const cafeId = review.cafeId;
-    await review.destroy({ transaction });
+
+    // Soft delete by setting isVisible to false
+    await db.collection('reviews').doc(id).update({
+      isVisible: false,
+      updatedAt: new Date()
+    });
 
     // Update cafe's average rating
-    const reviewStats = await Review.findOne({
-      where: { cafeId, isVisible: true },
-      attributes: [
-        [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'totalReviews']
-      ],
-      transaction
-    });
-
-    await Cafe.update({
-      rating: parseFloat(reviewStats.dataValues.avgRating) || 0,
-      totalReviews: parseInt(reviewStats.dataValues.totalReviews) || 0
-    }, {
-      where: { id: cafeId },
-      transaction
-    });
-
-    await transaction.commit();
+    await updateCafeRating(cafeId);
 
     res.json({
       success: true,
@@ -333,12 +390,11 @@ const deleteReview = async (req, res) => {
     });
 
   } catch (error) {
-    await transaction.rollback();
     console.error('Delete review error:', error);
     res.status(500).json({
       success: false,
       message: 'Error deleting review',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -352,19 +408,36 @@ const getMyReviews = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const reviews = await Review.findAll({
-      where: { userId },
-      include: [{
-        model: Cafe,
-        as: 'cafe',
-        attributes: ['id', 'name', 'city', 'photos']
-      }],
-      order: [['createdAt', 'DESC']]
-    });
+    const snapshot = await db.collection('reviews')
+      .where('userId', '==', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const reviews = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt
+    }));
+
+    // Fetch cafe data for each review
+    const reviewsWithCafe = await Promise.all(
+      reviews.map(async (review) => {
+        const cafe = await getCafeData(review.cafeId);
+        return {
+          ...review,
+          cafe: cafe ? {
+            id: cafe.id,
+            name: cafe.name,
+            city: cafe.city,
+            photos: cafe.photos || []
+          } : null
+        };
+      })
+    );
 
     res.json({
       success: true,
-      data: { reviews }
+      data: { reviews: reviewsWithCafe }
     });
 
   } catch (error) {
@@ -372,7 +445,7 @@ const getMyReviews = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching reviews',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -387,20 +460,41 @@ const checkUserReview = async (req, res) => {
     const { cafeId } = req.params;
     const userId = req.user.id;
 
-    const review = await Review.findOne({
-      where: { userId, cafeId },
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'name', 'avatar']
-      }]
-    });
+    const snapshot = await db.collection('reviews')
+      .where('userId', '==', userId)
+      .where('cafeId', '==', cafeId)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.json({
+        success: true,
+        data: {
+          hasReviewed: false,
+          review: null
+        }
+      });
+    }
+
+    const reviewDoc = snapshot.docs[0];
+    const reviewData = reviewDoc.data();
+    const user = await getUserData(userId);
+
+    const review = {
+      id: reviewDoc.id,
+      ...reviewData,
+      user: user ? {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar
+      } : null
+    };
 
     res.json({
       success: true,
       data: {
-        hasReviewed: !!review,
-        review: review || null
+        hasReviewed: true,
+        review
       }
     });
 
@@ -409,7 +503,7 @@ const checkUserReview = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error checking review',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -425,38 +519,42 @@ const respondToReview = async (req, res) => {
     const { response } = req.body;
     const ownerId = req.user.id;
 
-    const review = await Review.findByPk(id, {
-      include: [{
-        model: Cafe,
-        as: 'cafe',
-        attributes: ['id', 'ownerId']
-      }]
-    });
+    const reviewDoc = await db.collection('reviews').doc(id).get();
 
-    if (!review) {
+    if (!reviewDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Review not found'
       });
     }
 
+    const review = reviewDoc.data();
+
     // Check if user is the cafe owner
-    if (review.cafe.ownerId !== ownerId) {
+    const cafe = await getCafeData(review.cafeId);
+    if (!cafe || cafe.ownerId !== ownerId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to respond to this review'
       });
     }
 
-    await review.update({
+    await db.collection('reviews').doc(id).update({
       ownerResponse: response,
-      ownerResponseAt: new Date()
+      ownerResponseAt: new Date(),
+      updatedAt: new Date()
     });
+
+    const updatedDoc = await db.collection('reviews').doc(id).get();
+    const updatedReview = {
+      id: updatedDoc.id,
+      ...updatedDoc.data()
+    };
 
     res.json({
       success: true,
       message: 'Response added successfully',
-      data: { review }
+      data: { review: updatedReview }
     });
 
   } catch (error) {
@@ -464,7 +562,7 @@ const respondToReview = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error responding to review',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -478,4 +576,3 @@ module.exports = {
   checkUserReview,
   respondToReview
 };
-

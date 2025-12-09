@@ -1,24 +1,14 @@
-const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const { db, auth } = require('../config/firebase');
 const { validationResult } = require('express-validator');
 
 /**
- * Generate JWT Token
+ * @desc    Create user profile in Firestore after Firebase Auth registration
+ * @route   POST /api/auth/create-profile
+ * @access  Private (requires Firebase token)
+ * @note    Called after Firebase Auth registration to create user document
  */
-const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
-  });
-};
-
-/**
- * @desc    Register a new user (Client or Owner)
- * @route   POST /api/auth/register
- * @access  Public
- */
-const register = async (req, res) => {
+const createProfile = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -27,98 +17,47 @@ const register = async (req, res) => {
       });
     }
 
-    const { name, email, password, role, phone } = req.body;
+    const { name, role, phone } = req.body;
+    const userId = req.user.id;
+    const email = req.user.email;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
+    // Check if user profile already exists
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (userDoc.exists) {
       return res.status(400).json({
         success: false,
-        message: 'User with this email already exists'
+        message: 'User profile already exists'
       });
     }
 
-    // Create user
-    const user = await User.create({
+    // Create user profile in Firestore
+    const userData = {
       name,
       email,
-      password,
       role: role || 'client',
-      phone
-    });
+      phone: phone || null,
+      avatar: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
 
-    // Generate token
-    const token = generateToken(user.id, user.role);
+    await db.collection('users').doc(userId).set(userData);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Profile created successfully',
       data: {
-        user: user.toJSON(),
-        token
+        user: {
+          id: userId,
+          ...userData
+        }
       }
     });
   } catch (error) {
-    console.error('Register error:', error);
+    console.error('Create profile error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error during registration',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-/**
- * @desc    Login user
- * @route   POST /api/auth/login
- * @access  Public
- */
-const login = async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        errors: errors.array()
-      });
-    }
-
-    const { email, password } = req.body;
-
-    // Find user by email
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
-
-    // Check password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
-
-    // Generate token
-    const token = generateToken(user.id, user.role);
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        user: user.toJSON(),
-        token
-      }
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during login',
+      message: 'Server error during profile creation',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -131,13 +70,24 @@ const login = async (req, res) => {
  */
 const getMe = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] }
-    });
+    const userDoc = await db.collection('users').doc(req.user.id).get();
 
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'User profile not found'
+      });
+    }
+
+    const userData = userDoc.data();
     res.json({
       success: true,
-      data: { user }
+      data: {
+        user: {
+          id: userDoc.id,
+          ...userData
+        }
+      }
     });
   } catch (error) {
     console.error('GetMe error:', error);
@@ -156,19 +106,31 @@ const getMe = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const { name, phone, avatar } = req.body;
+    const userId = req.user.id;
 
-    const user = await User.findByPk(req.user.id);
-    
-    if (name) user.name = name;
-    if (phone) user.phone = phone;
-    if (avatar) user.avatar = avatar;
+    const updateData = {
+      updatedAt: new Date()
+    };
 
-    await user.save();
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (avatar !== undefined) updateData.avatar = avatar;
+
+    await db.collection('users').doc(userId).update(updateData);
+
+    // Get updated user data
+    const userDoc = await db.collection('users').doc(userId).get();
+    const userData = userDoc.data();
 
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      data: { user: user.toJSON() }
+      data: {
+        user: {
+          id: userDoc.id,
+          ...userData
+        }
+      }
     });
   } catch (error) {
     console.error('Update profile error:', error);
@@ -183,25 +145,18 @@ const updateProfile = async (req, res) => {
  * @desc    Change password
  * @route   PUT /api/auth/password
  * @access  Private
+ * @note    Password changes are handled by Firebase Auth on frontend
+ *          This endpoint is kept for consistency but frontend should use Firebase Auth directly
  */
 const changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { newPassword } = req.body;
+    const userId = req.user.id;
 
-    const user = await User.findByPk(req.user.id);
-
-    // Verify current password
-    const isMatch = await user.comparePassword(currentPassword);
-    if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current password is incorrect'
-      });
-    }
-
-    // Update password
-    user.password = newPassword;
-    await user.save();
+    // Update password using Firebase Admin SDK
+    await auth.updateUser(userId, {
+      password: newPassword
+    });
 
     res.json({
       success: true,
@@ -211,7 +166,8 @@ const changePassword = async (req, res) => {
     console.error('Change password error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -243,8 +199,7 @@ const logout = async (req, res) => {
 };
 
 module.exports = {
-  register,
-  login,
+  createProfile,
   logout,
   getMe,
   updateProfile,

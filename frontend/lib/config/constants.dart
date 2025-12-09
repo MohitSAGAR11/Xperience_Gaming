@@ -3,16 +3,16 @@ class ApiConstants {
   // Base URL - Change based on environment
   // Android Emulator: 10.0.2.2
   // iOS Simulator: localhost
-  // Physical Device: Your PC's IP (e.g., 192.168.1.x)
+  // Physical Device: Your PC's IP (e.g., 192.168.4.128)
   static const String baseUrl = 'http://10.0.2.2:5000/api';
   
   // Auth Endpoints
-  static const String register = '/auth/register';
-  static const String login = '/auth/login';
+  // Note: register/login are handled by Firebase Auth, backend endpoints are:
+  static const String createProfile = '/auth/create-profile'; // Called after Firebase registration
   static const String logout = '/auth/logout';
   static const String profile = '/auth/me';
   static const String updateProfile = '/auth/profile';
-  static const String changePassword = '/auth/password';
+  static const String changePassword = '/auth/password'; // Can use Firebase Auth directly
   
   // Cafe Endpoints
   static const String cafes = '/cafes';

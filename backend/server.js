@@ -1,7 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { connectDB } = require('./src/config/db');
+// Initialize Firebase (replaces PostgreSQL connection)
+require('./src/config/firebase');
 
 // Import routes
 const authRoutes = require('./src/routes/authRoutes');
@@ -67,10 +68,11 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    // Connect to database
-    await connectDB();
+    // Firebase is initialized in firebase.js config file
+    // No need for database connection with Firestore
 
-    app.listen(PORT, () => {
+    // Listen on all network interfaces (0.0.0.0) for physical device access
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔══════════════════════════════════════════════════╗
 ║                                                  ║

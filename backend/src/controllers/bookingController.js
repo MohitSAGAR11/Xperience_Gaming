@@ -1,5 +1,4 @@
-const { Op } = require('sequelize');
-const { Booking, Cafe, User, sequelize } = require('../models');
+const { db } = require('../config/firebase');
 const { validationResult } = require('express-validator');
 
 /**
@@ -40,74 +39,69 @@ const calculateDuration = (startTime, endTime) => {
  * @returns {boolean} True if conflict exists
  */
 const checkBookingConflict = async (cafeId, stationType, consoleType, stationNumber, bookingDate, startTime, endTime, excludeBookingId = null) => {
-  const where = {
-    cafeId,
-    stationType,
-    stationNumber,
-    bookingDate,
-    status: { [Op.in]: ['pending', 'confirmed'] },
-    [Op.or]: [
-      // New booking starts during existing booking
-      {
-        startTime: { [Op.lte]: startTime },
-        endTime: { [Op.gt]: startTime }
-      },
-      // New booking ends during existing booking
-      {
-        startTime: { [Op.lt]: endTime },
-        endTime: { [Op.gte]: endTime }
-      },
-      // New booking completely contains existing booking
-      {
-        startTime: { [Op.gte]: startTime },
-        endTime: { [Op.lte]: endTime }
-      }
-    ]
-  };
+  let query = db.collection('bookings')
+    .where('cafeId', '==', cafeId)
+    .where('stationType', '==', stationType)
+    .where('stationNumber', '==', stationNumber)
+    .where('bookingDate', '==', bookingDate);
 
-  // For console bookings, also match console type
   if (stationType === 'console' && consoleType) {
-    where.consoleType = consoleType;
+    query = query.where('consoleType', '==', consoleType);
   }
 
-  if (excludeBookingId) {
-    where.id = { [Op.ne]: excludeBookingId };
+  const snapshot = await query.get();
+  const bookings = snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(b => ['pending', 'confirmed'].includes(b.status))
+    .filter(b => !excludeBookingId || b.id !== excludeBookingId);
+
+  const reqStartMins = timeToMinutes(startTime);
+  const reqEndMins = timeToMinutes(endTime);
+
+  // Check for time overlap
+  for (const booking of bookings) {
+    const bookedStartMins = timeToMinutes(booking.startTime);
+    const bookedEndMins = timeToMinutes(booking.endTime);
+
+    // Overlap detection: requested starts before booked ends AND requested ends after booked starts
+    if (reqStartMins < bookedEndMins && reqEndMins > bookedStartMins) {
+      return true;
+    }
   }
 
-  const conflictingBooking = await Booking.findOne({ where });
-  return !!conflictingBooking;
+  return false;
 };
 
 /**
  * Get hourly rate based on station type
- * @param {Object} cafe - Cafe model instance
+ * @param {Object} cafe - Cafe data
  * @param {string} stationType - 'pc' or 'console'
  * @param {string|null} consoleType - Console type
  * @returns {number} Hourly rate
  */
 const getHourlyRate = (cafe, stationType, consoleType) => {
   if (stationType === 'pc') {
-    return parseFloat(cafe.pcHourlyRate || cafe.hourlyRate);
+    return parseFloat(cafe.pcHourlyRate || cafe.hourlyRate || 0);
   }
   
   if (stationType === 'console' && consoleType && cafe.consoles && cafe.consoles[consoleType]) {
     const consoleRate = cafe.consoles[consoleType].hourlyRate;
-    return parseFloat(consoleRate > 0 ? consoleRate : cafe.hourlyRate);
+    return parseFloat(consoleRate > 0 ? consoleRate : cafe.hourlyRate || 0);
   }
   
-  return parseFloat(cafe.hourlyRate);
+  return parseFloat(cafe.hourlyRate || 0);
 };
 
 /**
  * Get max station/unit number based on type
- * @param {Object} cafe - Cafe model instance
+ * @param {Object} cafe - Cafe data
  * @param {string} stationType - 'pc' or 'console'
  * @param {string|null} consoleType - Console type
  * @returns {number} Max station number
  */
 const getMaxStations = (cafe, stationType, consoleType) => {
   if (stationType === 'pc') {
-    return cafe.totalPcStations;
+    return cafe.totalPcStations || 0;
   }
   
   if (stationType === 'console' && consoleType && cafe.consoles && cafe.consoles[consoleType]) {
@@ -118,8 +112,7 @@ const getMaxStations = (cafe, stationType, consoleType) => {
 };
 
 /**
- * OPTIMIZED: Get available stations for a specific time slot (server-side calculation)
- * This reduces network payload and prevents race conditions
+ * Get available stations for a specific time slot
  * @param {string} cafeId - Cafe ID
  * @param {string} stationType - 'pc' or 'console'
  * @param {string|null} consoleType - Console type
@@ -127,47 +120,36 @@ const getMaxStations = (cafe, stationType, consoleType) => {
  * @param {string} startTime - Requested start time
  * @param {string} endTime - Requested end time
  * @param {number} maxStations - Total stations available
- * @param {Object} transaction - Optional Sequelize transaction
  * @returns {Array<number>} Array of available station numbers
  */
-const getAvailableStations = async (cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations, transaction = null) => {
-  // Convert times to minutes for accurate overlap detection
+const getAvailableStations = async (cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations) => {
   const reqStartMins = timeToMinutes(startTime);
   const reqEndMins = timeToMinutes(endTime);
   
-  // Build query for existing bookings
-  const whereClause = {
-    cafeId,
-    stationType,
-    bookingDate,
-    status: { [Op.in]: ['pending', 'confirmed'] }
-  };
-  
+  let query = db.collection('bookings')
+    .where('cafeId', '==', cafeId)
+    .where('stationType', '==', stationType)
+    .where('bookingDate', '==', bookingDate);
+
   if (stationType === 'console' && consoleType) {
-    whereClause.consoleType = consoleType;
+    query = query.where('consoleType', '==', consoleType);
   }
-  
-  // Get all bookings for this cafe/date/type
-  const existingBookings = await Booking.findAll({
-    where: whereClause,
-    attributes: ['stationNumber', 'startTime', 'endTime'],
-    ...(transaction && { transaction, lock: transaction.LOCK.UPDATE })
-  });
-  
-  // Check each station for availability
+
+  const snapshot = await query.get();
+  const existingBookings = snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(b => ['pending', 'confirmed'].includes(b.status));
+
   const availableStations = [];
-  
+
   for (let station = 1; station <= maxStations; station++) {
-    // Get bookings for this specific station
     const stationBookings = existingBookings.filter(b => b.stationNumber === station);
     
-    // Check if any booking overlaps with requested time
     let hasConflict = false;
     for (const booking of stationBookings) {
       const bookedStartMins = timeToMinutes(booking.startTime);
       const bookedEndMins = timeToMinutes(booking.endTime);
       
-      // Overlap detection: requested starts before booked ends AND requested ends after booked starts
       if (reqStartMins < bookedEndMins && reqEndMins > bookedStartMins) {
         hasConflict = true;
         break;
@@ -178,8 +160,26 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
       availableStations.push(station);
     }
   }
-  
+
   return availableStations;
+};
+
+/**
+ * Helper function to get cafe data
+ */
+const getCafeData = async (cafeId) => {
+  const cafeDoc = await db.collection('cafes').doc(cafeId).get();
+  if (!cafeDoc.exists) return null;
+  return { id: cafeDoc.id, ...cafeDoc.data() };
+};
+
+/**
+ * Helper function to get user data
+ */
+const getUserData = async (userId) => {
+  const userDoc = await db.collection('users').doc(userId).get();
+  if (!userDoc.exists) return null;
+  return { id: userDoc.id, ...userDoc.data() };
 };
 
 /**
@@ -199,8 +199,8 @@ const createBooking = async (req, res) => {
 
     const { 
       cafeId, 
-      stationType = 'pc',  // 'pc' or 'console'
-      consoleType,         // Required if stationType is 'console'
+      stationType = 'pc',
+      consoleType,
       stationNumber, 
       bookingDate, 
       startTime, 
@@ -208,7 +208,7 @@ const createBooking = async (req, res) => {
       notes 
     } = req.body;
 
-    // Validate console type is provided for console bookings
+    // Validate console type
     const validConsoleTypes = ['ps5', 'ps4', 'xbox_series_x', 'xbox_series_s', 'xbox_one', 'nintendo_switch'];
     if (stationType === 'console') {
       if (!consoleType) {
@@ -226,7 +226,7 @@ const createBooking = async (req, res) => {
     }
 
     // Get cafe details
-    const cafe = await Cafe.findByPk(cafeId);
+    const cafe = await getCafeData(cafeId);
     if (!cafe) {
       return res.status(404).json({
         success: false,
@@ -241,7 +241,7 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Get max available stations/units for this type
+    // Get max available stations/units
     const maxStations = getMaxStations(cafe, stationType, consoleType);
     
     if (maxStations === 0) {
@@ -261,21 +261,20 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Validate booking time is within cafe hours (using minutes for accurate comparison)
+    // Validate booking time
     const bookingStartMins = timeToMinutes(startTime);
     const bookingEndMins = timeToMinutes(endTime);
     const cafeOpenMins = timeToMinutes(cafe.openingTime);
     const cafeCloseMins = timeToMinutes(cafe.closingTime);
     
     if (bookingStartMins < cafeOpenMins || bookingEndMins > cafeCloseMins) {
-      const formatTime = (t) => t.substring(0, 5); // "09:00:00" -> "09:00"
+      const formatTime = (t) => t ? t.substring(0, 5) : '';
       return res.status(400).json({
         success: false,
         message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
       });
     }
 
-    // Validate end time is after start time (using minutes for accurate comparison)
     if (bookingEndMins <= bookingStartMins) {
       return res.status(400).json({
         success: false,
@@ -283,87 +282,97 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Calculate duration and total amount (Automated Billing)
+    // Calculate duration and total amount
     const durationHours = calculateDuration(startTime, endTime);
     const hourlyRate = getHourlyRate(cafe, stationType, consoleType);
     const totalAmount = durationHours * hourlyRate;
 
-    // ========== ATOMIC TRANSACTION (Prevents Race Conditions) ==========
-    // Use database transaction to ensure conflict check + booking creation are atomic
-    const result = await sequelize.transaction(async (t) => {
-      // Re-check for conflicts INSIDE transaction with row locking
-      const availableStations = await getAvailableStations(
-        cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations, t
-      );
+    // Use Firestore transaction to prevent race conditions
+    const bookingRef = db.collection('bookings').doc();
+    
+    try {
+      await db.runTransaction(async (transaction) => {
+        // Re-check for conflicts inside transaction
+        const availableStations = await getAvailableStations(
+          cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations
+        );
 
-      // Check if requested station is available
-      if (!availableStations.includes(stationNumber)) {
-        const typeLabel = stationType === 'pc' ? 'PC station' : `${consoleType} console`;
-        throw new Error(`CONFLICT:This ${typeLabel} #${stationNumber} is already booked for the selected time slot. Available: ${availableStations.length > 0 ? '#' + availableStations.join(', #') : 'None'}`);
-      }
-
-      // Create the booking within the transaction
-      const booking = await Booking.create({
-        userId: req.user.id,
-        cafeId,
-        stationType,
-        consoleType: stationType === 'console' ? consoleType : null,
-        stationNumber,
-        bookingDate,
-        startTime,
-        endTime,
-        durationHours,
-        hourlyRate,
-        totalAmount,
-        notes,
-        status: 'confirmed'
-      }, { transaction: t });
-
-      return booking;
-    });
-    // ========== END TRANSACTION ==========
-
-    // Fetch with associations (outside transaction)
-    const bookingWithDetails = await Booking.findByPk(result.id, {
-      include: [
-        {
-          model: Cafe,
-          as: 'cafe',
-          attributes: ['id', 'name', 'address', 'city']
-        },
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email']
+        if (!availableStations.includes(stationNumber)) {
+          const typeLabel = stationType === 'pc' ? 'PC station' : `${consoleType} console`;
+          throw new Error(`CONFLICT:This ${typeLabel} #${stationNumber} is already booked for the selected time slot. Available: ${availableStations.length > 0 ? '#' + availableStations.join(', #') : 'None'}`);
         }
-      ]
-    });
 
-    res.status(201).json({
-      success: true,
-      message: 'Booking confirmed successfully',
-      data: {
-        booking: bookingWithDetails,
-        billing: {
+        // Create booking within transaction
+        const bookingData = {
+          userId: req.user.id,
+          cafeId,
           stationType,
           consoleType: stationType === 'console' ? consoleType : null,
+          stationNumber,
+          bookingDate,
+          startTime,
+          endTime,
           durationHours,
           hourlyRate,
-          totalAmount
+          totalAmount,
+          notes: notes || null,
+          status: 'confirmed',
+          paymentStatus: 'unpaid',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+
+        transaction.set(bookingRef, bookingData);
+      });
+
+      // Fetch booking with details
+      const bookingDoc = await bookingRef.get();
+      const bookingData = bookingDoc.data();
+      
+      const cafeData = await getCafeData(cafeId);
+      const userData = await getUserData(req.user.id);
+
+      const booking = {
+        id: bookingDoc.id,
+        ...bookingData,
+        cafe: cafeData ? {
+          id: cafeData.id,
+          name: cafeData.name,
+          address: cafeData.address,
+          city: cafeData.city
+        } : null,
+        user: userData ? {
+          id: userData.id,
+          name: userData.name,
+          email: userData.email
+        } : null
+      };
+
+      res.status(201).json({
+        success: true,
+        message: 'Booking confirmed successfully',
+        data: {
+          booking,
+          billing: {
+            stationType,
+            consoleType: stationType === 'console' ? consoleType : null,
+            durationHours,
+            hourlyRate,
+            totalAmount
+          }
         }
+      });
+    } catch (error) {
+      if (error.message && error.message.startsWith('CONFLICT:')) {
+        return res.status(409).json({
+          success: false,
+          message: error.message.replace('CONFLICT:', '')
+        });
       }
-    });
+      throw error;
+    }
   } catch (error) {
     console.error('Create booking error:', error);
-    
-    // Handle conflict errors from transaction
-    if (error.message && error.message.startsWith('CONFLICT:')) {
-      return res.status(409).json({
-        success: false,
-        message: error.message.replace('CONFLICT:', '')
-      });
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Server error while creating booking',
@@ -373,16 +382,14 @@ const createBooking = async (req, res) => {
 };
 
 /**
- * @desc    OPTIMIZED: Get available stations for a specific time slot
+ * @desc    Get available stations for a specific time slot
  * @route   GET /api/bookings/available-stations
  * @access  Private
- * @query   cafeId, stationType, consoleType, bookingDate, startTime, endTime
  */
 const getAvailableStationsAPI = async (req, res) => {
   try {
     const { cafeId, stationType, consoleType, bookingDate, startTime, endTime } = req.query;
 
-    // Validate required fields
     if (!cafeId || !stationType || !bookingDate || !startTime || !endTime) {
       return res.status(400).json({
         success: false,
@@ -390,8 +397,7 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
-    // Get cafe details
-    const cafe = await Cafe.findByPk(cafeId);
+    const cafe = await getCafeData(cafeId);
     if (!cafe) {
       return res.status(404).json({
         success: false,
@@ -415,7 +421,6 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
-    // Get max stations
     const maxStations = getMaxStations(cafe, stationType, consoleType);
     
     if (maxStations === 0) {
@@ -429,12 +434,10 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
-    // Get available stations (server-side calculation)
     const availableStations = await getAvailableStations(
       cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations
     );
 
-    // Calculate pricing
     const durationHours = calculateDuration(startTime, endTime);
     const hourlyRate = getHourlyRate(cafe, stationType, consoleType);
 
@@ -470,33 +473,84 @@ const getMyBookings = async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
     
-    const where = { userId: req.user.id };
-    
+    let query = db.collection('bookings')
+      .where('userId', '==', req.user.id);
+
     if (status) {
-      where.status = status;
+      query = query.where('status', '==', status);
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let snapshot;
+    let needsClientSort = false;
 
-    const { count, rows: bookings } = await Booking.findAndCountAll({
-      where,
-      include: [{
-        model: Cafe,
-        as: 'cafe',
-        attributes: ['id', 'name', 'address', 'city', 'photos']
-      }],
-      limit: parseInt(limit),
-      offset,
-      order: [['bookingDate', 'DESC'], ['startTime', 'DESC']]
-    });
+    try {
+      // Try with orderBy first (requires composite index)
+      snapshot = await query
+        .orderBy('bookingDate', 'desc')
+        .orderBy('startTime', 'desc')
+        .get();
+    } catch (indexError) {
+      // Fallback: If index doesn't exist, query without orderBy and sort client-side
+      console.log('Index not ready, using fallback query for getMyBookings');
+      snapshot = await db.collection('bookings')
+        .where('userId', '==', req.user.id)
+        .get();
+      needsClientSort = true;
+    }
+
+    let bookings = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt,
+      updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : doc.data().updatedAt
+    }));
+
+    // Filter by status if needed (in case fallback query was used)
+    if (needsClientSort && status) {
+      bookings = bookings.filter(b => b.status === status);
+    }
+
+    // Sort client-side if index wasn't available
+    if (needsClientSort) {
+      bookings.sort((a, b) => {
+        // Sort by bookingDate desc, then startTime desc
+        const dateCompare = (b.bookingDate || '').localeCompare(a.bookingDate || '');
+        if (dateCompare !== 0) return dateCompare;
+        return (b.startTime || '').localeCompare(a.startTime || '');
+      });
+    }
+
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
+    const total = bookings.length;
+    bookings = bookings.slice(offset, offset + limitNum);
+
+    // Fetch cafe data for each booking
+    const bookingsWithCafe = await Promise.all(
+      bookings.map(async (booking) => {
+        const cafe = await getCafeData(booking.cafeId);
+        return {
+          ...booking,
+          cafe: cafe ? {
+            id: cafe.id,
+            name: cafe.name,
+            address: cafe.address,
+            city: cafe.city,
+            photos: cafe.photos || []
+          } : null
+        };
+      })
+    );
 
     // Categorize bookings
     const today = new Date().toISOString().split('T')[0];
     const categorizedBookings = {
-      upcoming: bookings.filter(b => 
+      upcoming: bookingsWithCafe.filter(b => 
         b.bookingDate >= today && ['pending', 'confirmed'].includes(b.status)
       ),
-      past: bookings.filter(b => 
+      past: bookingsWithCafe.filter(b => 
         b.bookingDate < today || ['completed', 'cancelled'].includes(b.status)
       )
     };
@@ -504,13 +558,13 @@ const getMyBookings = async (req, res) => {
     res.json({
       success: true,
       data: {
-        bookings,
+        bookings: bookingsWithCafe,
         categorized: categorizedBookings,
         pagination: {
-          total: count,
-          page: parseInt(page),
-          pages: Math.ceil(count / parseInt(limit)),
-          limit: parseInt(limit)
+          total,
+          page: pageNum,
+          pages: Math.ceil(total / limitNum),
+          limit: limitNum
         }
       }
     });
@@ -518,7 +572,7 @@ const getMyBookings = async (req, res) => {
     console.error('Get my bookings error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error while fetching your bookings'
     });
   }
 };
@@ -530,30 +584,23 @@ const getMyBookings = async (req, res) => {
  */
 const getBookingById = async (req, res) => {
   try {
-    const booking = await Booking.findByPk(req.params.id, {
-      include: [
-        {
-          model: Cafe,
-          as: 'cafe',
-          attributes: ['id', 'name', 'address', 'city', 'hourlyRate', 'photos']
-        },
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'phone']
-        }
-      ]
-    });
+    const bookingDoc = await db.collection('bookings').doc(req.params.id).get();
 
-    if (!booking) {
+    if (!bookingDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Booking not found'
       });
     }
 
-    // Check if user owns this booking or owns the cafe
-    const cafe = await Cafe.findByPk(booking.cafeId);
+    const bookingData = bookingDoc.data();
+    const booking = {
+      id: bookingDoc.id,
+      ...bookingData
+    };
+
+    // Check authorization
+    const cafe = await getCafeData(booking.cafeId);
     const isOwner = cafe && cafe.ownerId === req.user.id;
     const isBookingUser = booking.userId === req.user.id;
 
@@ -563,6 +610,26 @@ const getBookingById = async (req, res) => {
         message: 'Not authorized to view this booking'
       });
     }
+
+    // Fetch related data
+    const cafeData = await getCafeData(booking.cafeId);
+    const userData = await getUserData(booking.userId);
+
+    booking.cafe = cafeData ? {
+      id: cafeData.id,
+      name: cafeData.name,
+      address: cafeData.address,
+      city: cafeData.city,
+      hourlyRate: cafeData.hourlyRate,
+      photos: cafeData.photos || []
+    } : null;
+
+    booking.user = userData ? {
+      id: userData.id,
+      name: userData.name,
+      email: userData.email,
+      phone: userData.phone
+    } : null;
 
     res.json({
       success: true,
@@ -584,14 +651,16 @@ const getBookingById = async (req, res) => {
  */
 const cancelBooking = async (req, res) => {
   try {
-    const booking = await Booking.findByPk(req.params.id);
+    const bookingDoc = await db.collection('bookings').doc(req.params.id).get();
 
-    if (!booking) {
+    if (!bookingDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Booking not found'
       });
     }
+
+    const booking = bookingDoc.data();
 
     // Check ownership
     if (booking.userId !== req.user.id) {
@@ -616,13 +685,21 @@ const cancelBooking = async (req, res) => {
       });
     }
 
-    booking.status = 'cancelled';
-    await booking.save();
+    await db.collection('bookings').doc(req.params.id).update({
+      status: 'cancelled',
+      updatedAt: new Date()
+    });
+
+    const updatedDoc = await db.collection('bookings').doc(req.params.id).get();
+    const updatedBooking = {
+      id: updatedDoc.id,
+      ...updatedDoc.data()
+    };
 
     res.json({
       success: true,
       message: 'Booking cancelled successfully',
-      data: { booking }
+      data: { booking: updatedBooking }
     });
   } catch (error) {
     console.error('Cancel booking error:', error);
@@ -644,7 +721,7 @@ const getCafeBookings = async (req, res) => {
     const { date, status, page = 1, limit = 20 } = req.query;
 
     // Verify ownership
-    const cafe = await Cafe.findByPk(cafeId);
+    const cafe = await getCafeData(cafeId);
     if (!cafe) {
       return res.status(404).json({
         success: false,
@@ -659,39 +736,58 @@ const getCafeBookings = async (req, res) => {
       });
     }
 
-    const where = { cafeId };
+    let query = db.collection('bookings').where('cafeId', '==', cafeId);
     
     if (date) {
-      where.bookingDate = date;
+      query = query.where('bookingDate', '==', date);
     }
     
     if (status) {
-      where.status = status;
+      query = query.where('status', '==', status);
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const snapshot = await query
+      .orderBy('bookingDate', 'asc')
+      .orderBy('startTime', 'asc')
+      .get();
 
-    const { count, rows: bookings } = await Booking.findAndCountAll({
-      where,
-      include: [{
-        model: User,
-        as: 'user',
-        attributes: ['id', 'name', 'email', 'phone']
-      }],
-      limit: parseInt(limit),
-      offset,
-      order: [['bookingDate', 'ASC'], ['startTime', 'ASC']]
-    });
+    let bookings = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
+    const total = bookings.length;
+    bookings = bookings.slice(offset, offset + limitNum);
+
+    // Fetch user data for each booking
+    const bookingsWithUser = await Promise.all(
+      bookings.map(async (booking) => {
+        const user = await getUserData(booking.userId);
+        return {
+          ...booking,
+          user: user ? {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone
+          } : null
+        };
+      })
+    );
 
     res.json({
       success: true,
       data: {
-        bookings,
+        bookings: bookingsWithUser,
         pagination: {
-          total: count,
-          page: parseInt(page),
-          pages: Math.ceil(count / parseInt(limit)),
-          limit: parseInt(limit)
+          total,
+          page: pageNum,
+          pages: Math.ceil(total / limitNum),
+          limit: limitNum
         }
       }
     });
@@ -721,32 +817,41 @@ const updateBookingStatus = async (req, res) => {
       });
     }
 
-    const booking = await Booking.findByPk(req.params.id, {
-      include: [{ model: Cafe, as: 'cafe' }]
-    });
+    const bookingDoc = await db.collection('bookings').doc(req.params.id).get();
 
-    if (!booking) {
+    if (!bookingDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Booking not found'
       });
     }
 
+    const booking = bookingDoc.data();
+
     // Check if user owns the cafe
-    if (booking.cafe.ownerId !== req.user.id) {
+    const cafe = await getCafeData(booking.cafeId);
+    if (!cafe || cafe.ownerId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this booking'
       });
     }
 
-    booking.status = status;
-    await booking.save();
+    await db.collection('bookings').doc(req.params.id).update({
+      status,
+      updatedAt: new Date()
+    });
+
+    const updatedDoc = await db.collection('bookings').doc(req.params.id).get();
+    const updatedBooking = {
+      id: updatedDoc.id,
+      ...updatedDoc.data()
+    };
 
     res.json({
       success: true,
       message: `Booking status updated to ${status}`,
-      data: { booking }
+      data: { booking: updatedBooking }
     });
   } catch (error) {
     console.error('Update booking status error:', error);
@@ -758,7 +863,7 @@ const updateBookingStatus = async (req, res) => {
 };
 
 /**
- * @desc    Check slot availability before booking (PC or Console)
+ * @desc    Check slot availability before booking
  * @route   POST /api/bookings/check-availability
  * @access  Public
  */
@@ -774,7 +879,7 @@ const checkAvailability = async (req, res) => {
       endTime 
     } = req.body;
 
-    const cafe = await Cafe.findByPk(cafeId);
+    const cafe = await getCafeData(cafeId);
     if (!cafe) {
       return res.status(404).json({
         success: false,
@@ -782,7 +887,6 @@ const checkAvailability = async (req, res) => {
       });
     }
 
-    // Validate console type for console bookings
     if (stationType === 'console' && !consoleType) {
       return res.status(400).json({
         success: false,
@@ -828,6 +932,5 @@ module.exports = {
   getCafeBookings,
   updateBookingStatus,
   checkAvailability,
-  getAvailableStationsAPI  // NEW: Optimized endpoint
+  getAvailableStationsAPI
 };
-

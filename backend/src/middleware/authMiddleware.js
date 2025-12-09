@@ -1,8 +1,7 @@
-const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const { auth, db } = require('../config/firebase');
 
 /**
- * Middleware to protect routes - verifies JWT token
+ * Middleware to protect routes - verifies Firebase ID token
  */
 const protect = async (req, res, next) => {
   try {
@@ -20,22 +19,67 @@ const protect = async (req, res, next) => {
       });
     }
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify Firebase ID token
+    const decodedToken = await auth.verifyIdToken(token);
 
-    // Get user from token
-    const user = await User.findByPk(decoded.id, {
-      attributes: { exclude: ['password'] }
-    });
+    // Get user data from Firestore
+    const userDoc = await db.collection('users').doc(decodedToken.uid).get();
 
-    if (!user) {
+    if (!userDoc.exists) {
       return res.status(401).json({
         success: false,
-        message: 'User not found'
+        message: 'User not found in database'
       });
     }
 
-    req.user = user;
+    const userData = userDoc.data();
+    
+    // Attach user info to request
+    req.user = {
+      id: decodedToken.uid,
+      email: decodedToken.email,
+      ...userData
+    };
+    
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error.message);
+    return res.status(401).json({
+      success: false,
+      message: 'Not authorized, token invalid'
+    });
+  }
+};
+
+/**
+ * Middleware for new user registration - only verifies Firebase token
+ * Does NOT check if user exists in Firestore (since we're creating them)
+ */
+const protectNewUser = async (req, res, next) => {
+  try {
+    let token;
+
+    // Check for token in Authorization header
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized, no token provided'
+      });
+    }
+
+    // Verify Firebase ID token only - don't check Firestore
+    const decodedToken = await auth.verifyIdToken(token);
+    
+    // Attach basic user info from token
+    req.user = {
+      id: decodedToken.uid,
+      email: decodedToken.email
+    };
+    
     next();
   } catch (error) {
     console.error('Auth middleware error:', error.message);
@@ -90,6 +134,7 @@ const authenticated = (req, res, next) => {
 
 module.exports = {
   protect,
+  protectNewUser,
   ownerOnly,
   clientOnly,
   authenticated

@@ -1,5 +1,4 @@
-const { Op } = require('sequelize');
-const { Cafe, User, Booking } = require('../models');
+const { db } = require('../config/firebase');
 const { validationResult } = require('express-validator');
 
 /**
@@ -27,6 +26,35 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 const toRad = (deg) => deg * (Math.PI / 180);
 
 /**
+ * Helper function to convert Firestore timestamp to Date
+ */
+const convertTimestamp = (timestamp) => {
+  if (!timestamp) return null;
+  if (timestamp.toDate) return timestamp.toDate();
+  if (timestamp instanceof Date) return timestamp;
+  return new Date(timestamp);
+};
+
+/**
+ * Helper function to get owner data
+ */
+const getOwnerData = async (ownerId) => {
+  try {
+    const ownerDoc = await db.collection('users').doc(ownerId).get();
+    if (!ownerDoc.exists) return null;
+    return {
+      id: ownerDoc.id,
+      name: ownerDoc.data().name,
+      email: ownerDoc.data().email,
+      phone: ownerDoc.data().phone
+    };
+  } catch (error) {
+    console.error('Error fetching owner:', error);
+    return null;
+  }
+};
+
+/**
  * @desc    Create a new cafe (Owner only)
  * @route   POST /api/cafes
  * @access  Private/Owner
@@ -43,10 +71,20 @@ const createCafe = async (req, res) => {
 
     const cafeData = {
       ...req.body,
-      ownerId: req.user.id
+      ownerId: req.user.id,
+      isActive: true,
+      rating: 0,
+      totalReviews: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
 
-    const cafe = await Cafe.create(cafeData);
+    const docRef = await db.collection('cafes').add(cafeData);
+    const cafeDoc = await docRef.get();
+    const cafe = {
+      id: cafeDoc.id,
+      ...cafeDoc.data()
+    };
 
     res.status(201).json({
       success: true,
@@ -80,56 +118,91 @@ const getAllCafes = async (req, res) => {
       limit = 10 
     } = req.query;
 
-    const where = { isActive: true };
+    let query = db.collection('cafes').where('isActive', '==', true);
 
-    // Filter by city
+    // Filter by city (Firestore supports exact match)
     if (city) {
-      where.city = { [Op.iLike]: `%${city}%` };
+      query = query.where('city', '==', city);
     }
 
-    // Filter by hourly rate range
+    // Get all cafes (we'll filter client-side for complex queries)
+    const snapshot = await query.get();
+    let cafes = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: convertTimestamp(doc.data().createdAt),
+      updatedAt: convertTimestamp(doc.data().updatedAt)
+    }));
+
+    // Client-side filtering for complex queries
     if (minRate || maxRate) {
-      where.hourlyRate = {};
-      if (minRate) where.hourlyRate[Op.gte] = parseFloat(minRate);
-      if (maxRate) where.hourlyRate[Op.lte] = parseFloat(maxRate);
+      cafes = cafes.filter(cafe => {
+        const rate = cafe.pcHourlyRate || cafe.hourlyRate || 0;
+        if (minRate && rate < parseFloat(minRate)) return false;
+        if (maxRate && rate > parseFloat(maxRate)) return false;
+        return true;
+      });
     }
 
-    // Search by game in availableGames array
+    // Filter by game in availableGames or pcGames array
     if (game) {
-      where.availableGames = { [Op.contains]: [game] };
+      cafes = cafes.filter(cafe => {
+        const allGames = [
+          ...(cafe.availableGames || []),
+          ...(cafe.pcGames || [])
+        ];
+        return allGames.some(g => g.toLowerCase().includes(game.toLowerCase()));
+      });
     }
 
-    // Hybrid search: search by cafe name OR game title
+    // Search by cafe name or game title
     if (search) {
-      where[Op.or] = [
-        { name: { [Op.iLike]: `%${search}%` } },
-        { availableGames: { [Op.contains]: [search] } }
-      ];
+      const searchLower = search.toLowerCase();
+      cafes = cafes.filter(cafe => {
+        const nameMatch = cafe.name?.toLowerCase().includes(searchLower);
+        const allGames = [
+          ...(cafe.availableGames || []),
+          ...(cafe.pcGames || [])
+        ];
+        const gameMatch = allGames.some(g => g.toLowerCase().includes(searchLower));
+        return nameMatch || gameMatch;
+      });
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-
-    const { count, rows: cafes } = await Cafe.findAndCountAll({
-      where,
-      include: [{
-        model: User,
-        as: 'owner',
-        attributes: ['id', 'name', 'email']
-      }],
-      limit: parseInt(limit),
-      offset,
-      order: [['createdAt', 'DESC']]
+    // Sort by createdAt (newest first)
+    cafes.sort((a, b) => {
+      const dateA = a.createdAt || new Date(0);
+      const dateB = b.createdAt || new Date(0);
+      return dateB - dateA;
     });
+
+    // Pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
+    const total = cafes.length;
+    const paginatedCafes = cafes.slice(offset, offset + limitNum);
+
+    // Fetch owner data for each cafe
+    const cafesWithOwner = await Promise.all(
+      paginatedCafes.map(async (cafe) => {
+        const owner = await getOwnerData(cafe.ownerId);
+        return {
+          ...cafe,
+          owner: owner || { id: cafe.ownerId }
+        };
+      })
+    );
 
     res.json({
       success: true,
       data: {
-        cafes,
+        cafes: cafesWithOwner,
         pagination: {
-          total: count,
-          page: parseInt(page),
-          pages: Math.ceil(count / parseInt(limit)),
-          limit: parseInt(limit)
+          total,
+          page: pageNum,
+          pages: Math.ceil(total / limitNum),
+          limit: limitNum
         }
       }
     });
@@ -163,48 +236,61 @@ const getNearbyCafes = async (req, res) => {
     const searchRadius = parseFloat(radius); // in kilometers
 
     // Get all active cafes
-    const where = { isActive: true };
-    
-    // Optional game filter
+    const snapshot = await db.collection('cafes')
+      .where('isActive', '==', true)
+      .get();
+
+    let cafes = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Filter by game if provided
     if (game) {
-      where.availableGames = { [Op.contains]: [game] };
+      cafes = cafes.filter(cafe => {
+        const allGames = [
+          ...(cafe.availableGames || []),
+          ...(cafe.pcGames || [])
+        ];
+        return allGames.some(g => g.toLowerCase().includes(game.toLowerCase()));
+      });
     }
 
-    const allCafes = await Cafe.findAll({
-      where,
-      include: [{
-        model: User,
-        as: 'owner',
-        attributes: ['id', 'name']
-      }]
-    });
-
     // Filter cafes by distance using Haversine formula
-    const nearbyCafes = allCafes
+    const nearbyCafes = cafes
       .map(cafe => {
-        const distance = haversineDistance(
-          lat, lon,
-          parseFloat(cafe.latitude),
-          parseFloat(cafe.longitude)
-        );
+        const cafeLat = parseFloat(cafe.latitude);
+        const cafeLon = parseFloat(cafe.longitude);
+        const distance = haversineDistance(lat, lon, cafeLat, cafeLon);
         return {
-          ...cafe.toJSON(),
+          ...cafe,
           distance: Math.round(distance * 100) / 100 // Round to 2 decimal places
         };
       })
       .filter(cafe => cafe.distance <= searchRadius)
       .sort((a, b) => a.distance - b.distance);
 
+    // Fetch owner data
+    const cafesWithOwner = await Promise.all(
+      nearbyCafes.map(async (cafe) => {
+        const owner = await getOwnerData(cafe.ownerId);
+        return {
+          ...cafe,
+          owner: owner || { id: cafe.ownerId, name: 'Unknown' }
+        };
+      })
+    );
+
     res.json({
       success: true,
       data: {
-        cafes: nearbyCafes,
+        cafes: cafesWithOwner,
         searchParams: {
           latitude: lat,
           longitude: lon,
           radiusKm: searchRadius
         },
-        total: nearbyCafes.length
+        total: cafesWithOwner.length
       }
     });
   } catch (error) {
@@ -223,20 +309,26 @@ const getNearbyCafes = async (req, res) => {
  */
 const getCafeById = async (req, res) => {
   try {
-    const cafe = await Cafe.findByPk(req.params.id, {
-      include: [{
-        model: User,
-        as: 'owner',
-        attributes: ['id', 'name', 'email', 'phone']
-      }]
-    });
+    const cafeDoc = await db.collection('cafes').doc(req.params.id).get();
 
-    if (!cafe) {
+    if (!cafeDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
+
+    const cafeData = cafeDoc.data();
+    const cafe = {
+      id: cafeDoc.id,
+      ...cafeData,
+      createdAt: convertTimestamp(cafeData.createdAt),
+      updatedAt: convertTimestamp(cafeData.updatedAt)
+    };
+
+    // Fetch owner data
+    const owner = await getOwnerData(cafe.ownerId);
+    cafe.owner = owner || { id: cafe.ownerId };
 
     res.json({
       success: true,
@@ -258,17 +350,19 @@ const getCafeById = async (req, res) => {
  */
 const updateCafe = async (req, res) => {
   try {
-    const cafe = await Cafe.findByPk(req.params.id);
+    const cafeDoc = await db.collection('cafes').doc(req.params.id).get();
 
-    if (!cafe) {
+    if (!cafeDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
 
+    const cafeData = cafeDoc.data();
+
     // Check ownership
-    if (cafe.ownerId !== req.user.id) {
+    if (cafeData.ownerId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this cafe'
@@ -284,18 +378,31 @@ const updateCafe = async (req, res) => {
       'photos', 'amenities', 'availableGames', 'isActive'
     ];
 
+    const updateData = {
+      updatedAt: new Date()
+    };
+
     allowedUpdates.forEach(field => {
       if (req.body[field] !== undefined) {
-        cafe[field] = req.body[field];
+        updateData[field] = req.body[field];
       }
     });
 
-    await cafe.save();
+    await db.collection('cafes').doc(req.params.id).update(updateData);
+
+    // Get updated cafe
+    const updatedDoc = await db.collection('cafes').doc(req.params.id).get();
+    const updatedCafe = {
+      id: updatedDoc.id,
+      ...updatedDoc.data(),
+      createdAt: convertTimestamp(updatedDoc.data().createdAt),
+      updatedAt: convertTimestamp(updatedDoc.data().updatedAt)
+    };
 
     res.json({
       success: true,
       message: 'Cafe updated successfully',
-      data: { cafe }
+      data: { cafe: updatedCafe }
     });
   } catch (error) {
     console.error('Update cafe error:', error);
@@ -313,24 +420,30 @@ const updateCafe = async (req, res) => {
  */
 const deleteCafe = async (req, res) => {
   try {
-    const cafe = await Cafe.findByPk(req.params.id);
+    const cafeDoc = await db.collection('cafes').doc(req.params.id).get();
 
-    if (!cafe) {
+    if (!cafeDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
 
+    const cafeData = cafeDoc.data();
+
     // Check ownership
-    if (cafe.ownerId !== req.user.id) {
+    if (cafeData.ownerId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this cafe'
       });
     }
 
-    await cafe.destroy();
+    // Soft delete by setting isActive to false
+    await db.collection('cafes').doc(req.params.id).update({
+      isActive: false,
+      updatedAt: new Date()
+    });
 
     res.json({
       success: true,
@@ -352,10 +465,39 @@ const deleteCafe = async (req, res) => {
  */
 const getMyCafes = async (req, res) => {
   try {
-    const cafes = await Cafe.findAll({
-      where: { ownerId: req.user.id },
-      order: [['createdAt', 'DESC']]
-    });
+    let snapshot;
+    let needsClientSort = false;
+
+    try {
+      // Try with orderBy first (requires composite index)
+      snapshot = await db.collection('cafes')
+        .where('ownerId', '==', req.user.id)
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (indexError) {
+      // Fallback: If index doesn't exist, query without orderBy and sort client-side
+      console.log('Index not ready, using fallback query for getMyCafes');
+      snapshot = await db.collection('cafes')
+        .where('ownerId', '==', req.user.id)
+        .get();
+      needsClientSort = true;
+    }
+
+    let cafes = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: convertTimestamp(doc.data().createdAt),
+      updatedAt: convertTimestamp(doc.data().updatedAt)
+    }));
+
+    // Sort client-side if index wasn't available
+    if (needsClientSort) {
+      cafes.sort((a, b) => {
+        const dateA = a.createdAt || new Date(0);
+        const dateB = b.createdAt || new Date(0);
+        return dateB - dateA; // Descending order
+      });
+    }
 
     res.json({
       success: true,
@@ -365,7 +507,7 @@ const getMyCafes = async (req, res) => {
     console.error('Get my cafes error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error while fetching your cafes'
     });
   }
 };
@@ -387,27 +529,34 @@ const getCafeAvailability = async (req, res) => {
       });
     }
 
-    const cafe = await Cafe.findByPk(cafeId);
-    if (!cafe) {
+    const cafeDoc = await db.collection('cafes').doc(cafeId).get();
+    if (!cafeDoc.exists) {
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
 
+    const cafe = {
+      id: cafeDoc.id,
+      ...cafeDoc.data()
+    };
+
     // Get all bookings for the cafe on that date
-    const bookings = await Booking.findAll({
-      where: {
-        cafeId,
-        bookingDate: date,
-        status: { [Op.in]: ['pending', 'confirmed'] }
-      },
-      attributes: ['stationType', 'consoleType', 'stationNumber', 'startTime', 'endTime']
-    });
+    const bookingsSnapshot = await db.collection('bookings')
+      .where('cafeId', '==', cafeId)
+      .where('bookingDate', '==', date)
+      .get();
+
+    const bookings = bookingsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })).filter(b => ['pending', 'confirmed'].includes(b.status));
 
     // Create PC availability map
     const pcAvailability = {};
-    for (let i = 1; i <= cafe.totalPcStations; i++) {
+    const totalPcStations = cafe.totalPcStations || 0;
+    for (let i = 1; i <= totalPcStations; i++) {
       pcAvailability[i] = {
         station: i,
         bookedSlots: bookings
@@ -422,9 +571,10 @@ const getCafeAvailability = async (req, res) => {
     // Create Console availability map per console type
     const consoleAvailability = {};
     const consoleTypes = ['ps5', 'ps4', 'xbox_series_x', 'xbox_series_s', 'xbox_one', 'nintendo_switch'];
+    const consoles = cafe.consoles || {};
     
     for (const consoleType of consoleTypes) {
-      const consoleInfo = cafe.consoles?.[consoleType];
+      const consoleInfo = consoles[consoleType];
       if (consoleInfo && consoleInfo.quantity > 0) {
         consoleAvailability[consoleType] = {
           quantity: consoleInfo.quantity,
@@ -455,7 +605,7 @@ const getCafeAvailability = async (req, res) => {
         openingTime: cafe.openingTime,
         closingTime: cafe.closingTime,
         pc: {
-          totalStations: cafe.totalPcStations,
+          totalStations: totalPcStations,
           hourlyRate: cafe.pcHourlyRate || cafe.hourlyRate,
           availability: pcAvailability
         },
@@ -481,4 +631,3 @@ module.exports = {
   getMyCafes,
   getCafeAvailability
 };
-

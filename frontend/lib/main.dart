@@ -6,10 +6,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
 import 'core/storage.dart';
+import 'core/firebase_service.dart';
 
 void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await FirebaseService.initialize();
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([

@@ -1,13 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 
 import '../config/constants.dart';
 import '../core/storage.dart';
+import '../core/firebase_service.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 
 /// Auth State
 class AuthState {
-  final User? user;
+  final User? user; // This is our app's User model, not Firebase's
   final bool isLoading;
   final bool isAuthenticated;
   final String? error;
@@ -44,32 +46,48 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final StorageService _storage;
+  
+  // Flag to prevent listener from interfering during registration
+  bool _isRegistering = false;
 
   AuthNotifier(this._authService, this._storage) : super(AuthState());
 
-  /// Initialize auth state (check stored token)
+  /// Initialize auth state (check Firebase Auth)
   Future<void> initialize() async {
     state = state.copyWith(isLoading: true);
 
     try {
-      final isLoggedIn = await _storage.isLoggedIn();
-      
-      if (isLoggedIn) {
-        // Try to fetch user profile
-        final response = await _authService.getProfile();
+      // Listen to Firebase Auth state changes
+      // Note: This listener handles sign-out events primarily
+      // Registration and login manage their own state
+      FirebaseService.authStateChanges.listen((firebaseUser) async {
+        // Skip if we're in the middle of registration
+        if (_isRegistering) return;
         
+        if (firebaseUser == null) {
+          // User signed out - clear state
+          await _storage.clearAll();
+          state = AuthState(isLoading: false);
+        }
+        // Note: We don't auto-fetch profile on sign-in here
+        // because registration needs to create the profile first
+      });
+
+      // Check current Firebase Auth state
+      final firebaseUser = FirebaseService.currentUser;
+      if (firebaseUser != null) {
+        final response = await _authService.getProfile();
         if (response.success && response.user != null) {
           await _storage.saveUser(response.user!);
           await _storage.saveRole(response.user!.role);
-          
           state = AuthState(
             user: response.user,
             isAuthenticated: true,
             isLoading: false,
           );
         } else {
-          // Token invalid, clear storage
-          await _storage.clearAll();
+          // Profile not found - user exists in Firebase but not in our DB
+          // Don't sign them out, just show as unauthenticated
           state = AuthState(isLoading: false);
         }
       } else {
@@ -90,6 +108,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String? phone,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
+    
+    // Set flag to prevent auth listener from interfering
+    _isRegistering = true;
 
     try {
       final response = await _authService.register(
@@ -100,8 +121,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         phone: phone,
       );
 
-      if (response.success && response.user != null && response.token != null) {
-        await _storage.saveToken(response.token!);
+      if (response.success && response.user != null) {
         await _storage.saveUser(response.user!);
         await _storage.saveRole(response.user!.role);
 
@@ -110,12 +130,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isAuthenticated: true,
           isLoading: false,
         );
+        _isRegistering = false;
         return true;
       } else {
         state = state.copyWith(
           isLoading: false,
           error: response.message,
         );
+        _isRegistering = false;
         return false;
       }
     } catch (e) {
@@ -123,6 +145,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         error: e.toString(),
       );
+      _isRegistering = false;
       return false;
     }
   }
@@ -140,8 +163,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         password: password,
       );
 
-      if (response.success && response.user != null && response.token != null) {
-        await _storage.saveToken(response.token!);
+      if (response.success && response.user != null) {
         await _storage.saveUser(response.user!);
         await _storage.saveRole(response.user!.role);
 

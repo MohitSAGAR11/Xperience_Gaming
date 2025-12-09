@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
-import 'storage.dart';
+import 'firebase_service.dart';
 
 /// Dio HTTP Client Provider
 final dioProvider = Provider<Dio>((ref) {
@@ -22,9 +22,8 @@ final dioProvider = Provider<Dio>((ref) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // Add auth token to requests
-        final storage = ref.read(storageServiceProvider);
-        final token = await storage.getToken();
+        // Add Firebase ID token to requests
+        final token = await FirebaseService.getIdToken();
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
@@ -34,10 +33,10 @@ final dioProvider = Provider<Dio>((ref) {
         return handler.next(response);
       },
       onError: (error, handler) async {
-        // Handle 401 - Token expired
+        // Handle 401 - Token expired or invalid
         if (error.response?.statusCode == 401) {
-          final storage = ref.read(storageServiceProvider);
-          await storage.clearAll();
+          // Sign out from Firebase Auth
+          await FirebaseService.auth.signOut();
           // Navigation to login will be handled by the auth state
         }
         return handler.next(error);
@@ -70,20 +69,25 @@ class ApiClient {
     T Function(dynamic)? fromJson,
   }) async {
     try {
+      print('🌐 [API] GET request to: ${_dio.options.baseUrl}$path');
       final response = await _dio.get(
         path,
         queryParameters: queryParameters,
       );
+      print('🌐 [API] GET response: ${response.statusCode}');
       return ApiResponse.success(
         data: fromJson != null ? fromJson(response.data) : response.data,
         statusCode: response.statusCode,
       );
     } on DioException catch (e) {
+      print('🌐 [API] GET DioException: ${e.type} - ${e.message}');
+      print('🌐 [API] GET Error details: ${e.error}');
       return ApiResponse.error(
         message: _handleError(e),
         statusCode: e.response?.statusCode,
       );
     } catch (e) {
+      print('🌐 [API] GET unexpected error: $e');
       return ApiResponse.error(message: e.toString());
     }
   }
@@ -96,21 +100,26 @@ class ApiClient {
     T Function(dynamic)? fromJson,
   }) async {
     try {
+      print('🌐 [API] POST request to: ${_dio.options.baseUrl}$path');
       final response = await _dio.post(
         path,
         data: data,
         queryParameters: queryParameters,
       );
+      print('🌐 [API] POST response: ${response.statusCode}');
       return ApiResponse.success(
         data: fromJson != null ? fromJson(response.data) : response.data,
         statusCode: response.statusCode,
       );
     } on DioException catch (e) {
+      print('🌐 [API] POST DioException: ${e.type} - ${e.message}');
+      print('🌐 [API] POST Error details: ${e.error}');
       return ApiResponse.error(
         message: _handleError(e),
         statusCode: e.response?.statusCode,
       );
     } catch (e) {
+      print('🌐 [API] POST unexpected error: $e');
       return ApiResponse.error(message: e.toString());
     }
   }
