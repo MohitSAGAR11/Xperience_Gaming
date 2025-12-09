@@ -1,11 +1,11 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { 
+const {
   createProfile,
   logout,
-  getMe, 
-  updateProfile, 
-  changePassword 
+  getMe,
+  updateProfile,
+  changePassword
 } = require('../controllers/authController');
 const { protect, protectNewUser } = require('../middleware/authMiddleware');
 

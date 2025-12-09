@@ -16,7 +16,7 @@ const {
 const createReviewValidation = [
   body('cafeId')
     .notEmpty().withMessage('Cafe ID is required')
-    .isUUID().withMessage('Invalid cafe ID'),
+    .isString().withMessage('Cafe ID must be a string'),
   body('rating')
     .notEmpty().withMessage('Rating is required')
     .isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
@@ -31,7 +31,7 @@ const createReviewValidation = [
 ];
 
 const updateReviewValidation = [
-  param('id').isUUID().withMessage('Invalid review ID'),
+  param('id').notEmpty().withMessage('Review ID is required'),
   body('rating')
     .optional()
     .isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
@@ -46,7 +46,7 @@ const updateReviewValidation = [
 ];
 
 const respondValidation = [
-  param('id').isUUID().withMessage('Invalid review ID'),
+  param('id').notEmpty().withMessage('Review ID is required'),
   body('response')
     .notEmpty().withMessage('Response is required')
     .isString()

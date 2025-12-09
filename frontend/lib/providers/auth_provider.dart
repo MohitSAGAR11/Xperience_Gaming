@@ -61,11 +61,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Note: This listener handles sign-out events primarily
       // Registration and login manage their own state
       FirebaseService.authStateChanges.listen((firebaseUser) async {
-        // Skip if we're in the middle of registration
-        if (_isRegistering) return;
+        // Skip if we're in the middle of registration or already loading
+        if (_isRegistering || state.isLoading) {
+          print('🔐 [AUTH_LISTENER] Skipping - isRegistering=$_isRegistering, isLoading=${state.isLoading}');
+          return;
+        }
+        
+        print('🔐 [AUTH_LISTENER] Auth state changed: user=${firebaseUser?.uid ?? "null"}');
         
         if (firebaseUser == null) {
           // User signed out - clear state
+          print('🔐 [AUTH_LISTENER] User signed out, clearing state');
           await _storage.clearAll();
           state = AuthState(isLoading: false);
         }

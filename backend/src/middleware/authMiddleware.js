@@ -13,19 +13,24 @@ const protect = async (req, res, next) => {
     }
 
     if (!token) {
+      console.log('🔐 [AUTH_MIDDLEWARE] No token provided');
       return res.status(401).json({
         success: false,
         message: 'Not authorized, no token provided'
       });
     }
 
+    console.log('🔐 [AUTH_MIDDLEWARE] Verifying Firebase token...');
     // Verify Firebase ID token
     const decodedToken = await auth.verifyIdToken(token);
+    console.log('🔐 [AUTH_MIDDLEWARE] Token verified! UID:', decodedToken.uid);
 
     // Get user data from Firestore
+    console.log('🔐 [AUTH_MIDDLEWARE] Fetching user from Firestore...');
     const userDoc = await db.collection('users').doc(decodedToken.uid).get();
 
     if (!userDoc.exists) {
+      console.log('🔐 [AUTH_MIDDLEWARE] User not found in Firestore:', decodedToken.uid);
       return res.status(401).json({
         success: false,
         message: 'User not found in database'
@@ -33,6 +38,7 @@ const protect = async (req, res, next) => {
     }
 
     const userData = userDoc.data();
+    console.log('🔐 [AUTH_MIDDLEWARE] User authenticated! Role:', userData.role);
     
     // Attach user info to request
     req.user = {
@@ -43,7 +49,8 @@ const protect = async (req, res, next) => {
     
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error.message);
+    console.error('🔐 [AUTH_MIDDLEWARE] ERROR:', error.message);
+    console.error('🔐 [AUTH_MIDDLEWARE] ERROR Stack:', error.stack);
     return res.status(401).json({
       success: false,
       message: 'Not authorized, token invalid'
@@ -65,14 +72,17 @@ const protectNewUser = async (req, res, next) => {
     }
 
     if (!token) {
+      console.log('🔐 [AUTH_MIDDLEWARE] No token provided');
       return res.status(401).json({
         success: false,
         message: 'Not authorized, no token provided'
       });
     }
 
+    console.log('🔐 [AUTH_MIDDLEWARE] Verifying Firebase token for new user...');
     // Verify Firebase ID token only - don't check Firestore
     const decodedToken = await auth.verifyIdToken(token);
+    console.log('🔐 [AUTH_MIDDLEWARE] Token verified! UID:', decodedToken.uid);
     
     // Attach basic user info from token
     req.user = {
@@ -82,7 +92,7 @@ const protectNewUser = async (req, res, next) => {
     
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error.message);
+    console.error('🔐 [AUTH_MIDDLEWARE] ERROR:', error.message);
     return res.status(401).json({
       success: false,
       message: 'Not authorized, token invalid'

@@ -1,9 +1,8 @@
-/// User Model - Matches backend User schema
 class User {
   final String id;
   final String name;
   final String email;
-  final String role; // 'client' or 'owner'
+  final String role;
   final String? phone;
   final String? avatar;
   final DateTime createdAt;
@@ -20,7 +19,6 @@ class User {
     required this.updatedAt,
   });
 
-  /// Create User from JSON
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id'] ?? '',
@@ -29,16 +27,28 @@ class User {
       role: json['role'] ?? 'client',
       phone: json['phone'],
       avatar: json['avatar'],
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
-          : DateTime.now(),
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
-          : DateTime.now(),
+      createdAt: _parseTimestamp(json['createdAt']) ?? DateTime.now(),
+      updatedAt: _parseTimestamp(json['updatedAt']) ?? DateTime.now(),
     );
   }
 
-  /// Convert User to JSON
+  static DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+
+    if (timestamp is String) {
+      return DateTime.parse(timestamp);
+    }
+
+    if (timestamp is Map) {
+      final seconds = timestamp['_seconds'];
+      if (seconds != null) {
+        return DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      }
+    }
+
+    return null;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -52,13 +62,10 @@ class User {
     };
   }
 
-  /// Check if user is owner
   bool get isOwner => role == 'owner';
 
-  /// Check if user is client
   bool get isClient => role == 'client';
 
-  /// Get initials for avatar
   String get initials {
     final parts = name.split(' ');
     if (parts.length >= 2) {
@@ -67,7 +74,6 @@ class User {
     return name.substring(0, 2).toUpperCase();
   }
 
-  /// Copy with new values
   User copyWith({
     String? id,
     String? name,
@@ -91,7 +97,6 @@ class User {
   }
 }
 
-/// Auth Response from API
 class AuthResponse {
   final bool success;
   final String message;
@@ -117,4 +122,3 @@ class AuthResponse {
     );
   }
 }
-

@@ -9,8 +9,14 @@ const { validationResult } = require('express-validator');
  */
 const createProfile = async (req, res) => {
   try {
+    console.log('🔐 [CREATE_PROFILE] Request received');
+    console.log('🔐 [CREATE_PROFILE] User ID:', req.user.id);
+    console.log('🔐 [CREATE_PROFILE] User Email:', req.user.email);
+    console.log('🔐 [CREATE_PROFILE] Request Body:', req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('🔐 [CREATE_PROFILE] Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         errors: errors.array()
@@ -22,15 +28,26 @@ const createProfile = async (req, res) => {
     const email = req.user.email;
 
     // Check if user profile already exists
+    console.log('🔐 [CREATE_PROFILE] Checking if profile already exists...');
     const userDoc = await db.collection('users').doc(userId).get();
     if (userDoc.exists) {
-      return res.status(400).json({
-        success: false,
-        message: 'User profile already exists'
+      console.log('🔐 [CREATE_PROFILE] Profile already exists, returning existing data');
+      const existingData = userDoc.data();
+      // Return existing profile instead of error (idempotent behavior)
+      return res.status(200).json({
+        success: true,
+        message: 'Profile already exists',
+        data: {
+          user: {
+            id: userId,
+            ...existingData
+          }
+        }
       });
     }
 
     // Create user profile in Firestore
+    console.log('🔐 [CREATE_PROFILE] Creating new profile...');
     const userData = {
       name,
       email,
@@ -42,6 +59,7 @@ const createProfile = async (req, res) => {
     };
 
     await db.collection('users').doc(userId).set(userData);
+    console.log('🔐 [CREATE_PROFILE] Profile created successfully!');
 
     res.status(201).json({
       success: true,
@@ -54,7 +72,8 @@ const createProfile = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Create profile error:', error);
+    console.error('🔐 [CREATE_PROFILE] ERROR:', error);
+    console.error('🔐 [CREATE_PROFILE] ERROR Stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Server error during profile creation',
@@ -68,11 +87,14 @@ const createProfile = async (req, res) => {
  * @route   GET /api/auth/me
  * @access  Private
  */
+
 const getMe = async (req, res) => {
   try {
+    console.log('🔐 [GET_ME] Request for user:', req.user.id);
     const userDoc = await db.collection('users').doc(req.user.id).get();
 
     if (!userDoc.exists) {
+      console.log('🔐 [GET_ME] Profile not found for user:', req.user.id);
       return res.status(404).json({
         success: false,
         message: 'User profile not found'
@@ -80,17 +102,19 @@ const getMe = async (req, res) => {
     }
 
     const userData = userDoc.data();
+    console.log('🔐 [GET_ME] Profile found! Role:', userData.role);
+
     res.json({
       success: true,
       data: {
         user: {
-          id: userDoc.id,
+          id: userDoc.id,  // ✅ Add this line
           ...userData
         }
       }
     });
   } catch (error) {
-    console.error('GetMe error:', error);
+    console.error('🔐 [GET_ME] ERROR:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'

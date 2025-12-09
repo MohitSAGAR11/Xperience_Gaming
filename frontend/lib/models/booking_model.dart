@@ -62,12 +62,8 @@ class Booking {
       status: json['status'] ?? 'pending',
       paymentStatus: json['paymentStatus'] ?? 'unpaid',
       notes: json['notes'],
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
-          : DateTime.now(),
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
-          : DateTime.now(),
+      createdAt: _parseDateTime(json['createdAt']),
+      updatedAt: _parseDateTime(json['updatedAt']),
       cafe: json['cafe'] != null ? Cafe.fromJson(json['cafe']) : null,
       user: json['user'] != null ? User.fromJson(json['user']) : null,
     );
@@ -156,6 +152,29 @@ class Booking {
     if (value is int) return value.toDouble();
     if (value is String) return double.tryParse(value) ?? 0.0;
     return 0.0;
+  }
+
+  static DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    
+    // Handle Firestore Timestamp object: {"_seconds": 123, "_nanoseconds": 456}
+    if (value is Map) {
+      final seconds = value['_seconds'];
+      if (seconds != null) {
+        return DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      }
+    }
+    
+    // Handle string dates
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        return DateTime.now();
+      }
+    }
+    
+    return DateTime.now();
   }
 }
 

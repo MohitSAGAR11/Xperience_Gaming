@@ -4,7 +4,8 @@ class ApiConstants {
   // Android Emulator: 10.0.2.2
   // iOS Simulator: localhost
   // Physical Device: Your PC's IP (e.g., 192.168.4.128)
-  static const String baseUrl = 'http://10.0.2.2:5000/api';
+  // IMPORTANT: For physical device, use your PC's IP address!
+  static const String baseUrl = 'http://10.10.4.37:5000/api';
   
   // Auth Endpoints
   // Note: register/login are handled by Firebase Auth, backend endpoints are:

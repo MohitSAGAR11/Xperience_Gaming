@@ -73,15 +73,26 @@ class BookingService {
 
   /// Create a new booking
   Future<BookingResponse> createBooking(BookingRequest request) async {
+    print('🎫 [BOOKING_SERVICE] ========================================');
+    print('🎫 [BOOKING_SERVICE] createBooking method called!');
+    print('🎫 [BOOKING_SERVICE] Request data: ${request.toJson()}');
+    print('🎫 [BOOKING_SERVICE] API endpoint: ${ApiConstants.bookings}');
+    print('🎫 [BOOKING_SERVICE] ========================================');
+    
     final response = await _apiClient.post<Map<String, dynamic>>(
       ApiConstants.bookings,
       data: request.toJson(),
     );
 
+    print('🎫 [BOOKING_SERVICE] Response received: isSuccess=${response.isSuccess}');
+    print('🎫 [BOOKING_SERVICE] Response message: ${response.message}');
+
     if (response.isSuccess && response.data != null) {
+      print('🎫 [BOOKING_SERVICE] Parsing success response...');
       return BookingResponse.fromJson(response.data!);
     }
 
+    print('🎫 [BOOKING_SERVICE] Returning error response');
     return BookingResponse(
       success: false,
       message: response.message ?? ErrorMessages.unknownError,

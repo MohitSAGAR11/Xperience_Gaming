@@ -234,12 +234,24 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   }
 
   Future<void> _confirmBooking() async {
+    print('🎫 ========================================');
+    print('🎫 [CONFIRM_BOOKING] METHOD CALLED!');
+    print('🎫 Start Time: $_startTime');
+    print('🎫 End Time: $_endTime');
+    print('🎫 Selected Station: $_selectedStation');
+    print('🎫 Available Count: $_availableCount');
+    print('🎫 ========================================');
+    
     if (_startTime == null || _endTime == null) {
+      print('🎫 [CONFIRM_BOOKING] ERROR: Missing time slot');
       SnackbarUtils.showError(context, 'Please select a time slot');
       return;
     }
 
     if (_selectedStation == null || _availableCount == 0) {
+      print('🎫 [CONFIRM_BOOKING] ERROR: No station selected or no availability');
+      print('🎫 Selected Station: $_selectedStation');
+      print('🎫 Available Count: $_availableCount');
       SnackbarUtils.showError(context, 'No stations available for this time slot');
       return;
     }
@@ -254,6 +266,17 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     try {
       final bookingService = ref.read(bookingServiceProvider);
 
+      print('🎫 ========================================');
+      print('🎫 [SLOT_SELECTION] Creating booking request...');
+      print('🎫 Cafe ID: ${widget.cafeId}');
+      print('🎫 Station Type: $_stationType');
+      print('🎫 Console Type: ${_stationType == 'console' ? _consoleType : null}');
+      print('🎫 Station Number: $_selectedStation');
+      print('🎫 Date: ${DateTimeUtils.formatDateForApi(_selectedDate)}');
+      print('🎫 Start Time: $_startTime');
+      print('🎫 End Time: $_endTime');
+      print('🎫 ========================================');
+
       // Create booking with auto-assigned station
       final response = await bookingService.createBooking(
         BookingRequest(
@@ -267,11 +290,15 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         ),
       );
 
+      print('🎫 [SLOT_SELECTION] Response received: ${response.success}');
+      print('🎫 [SLOT_SELECTION] Message: ${response.message}');
+
       if (!mounted) return;
 
       setState(() => _isLoading = false);
 
       if (response.success && response.booking != null) {
+        print('🎫 [SLOT_SELECTION] Booking successful! Navigating to confirmation...');
         // Navigate to confirmation
         context.go(
           '/client/booking/confirm',
@@ -282,15 +309,20 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         );
       } else {
         // Show error and stay on page
+        print('🎫 [SLOT_SELECTION] Booking failed: ${response.message}');
         SnackbarUtils.showError(context, response.message);
         // Refresh availability in case it changed (but don't await)
         _updateAvailableCount();
       }
-    } catch (e) {
-      debugPrint('Booking error: $e');
+    } catch (e, stackTrace) {
+      print('🎫 ========================================');
+      print('🎫 [SLOT_SELECTION] BOOKING ERROR!');
+      print('🎫 Error: $e');
+      print('🎫 Stack trace: $stackTrace');
+      print('🎫 ========================================');
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showError(context, 'Booking failed. Please try again.');
+        SnackbarUtils.showError(context, 'Booking failed: $e');
       }
     }
   }

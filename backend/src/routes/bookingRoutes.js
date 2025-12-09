@@ -21,7 +21,7 @@ const validConsoleTypes = ['ps5', 'ps4', 'xbox_series_x', 'xbox_series_s', 'xbox
 const bookingValidation = [
   body('cafeId')
     .notEmpty().withMessage('Cafe ID is required')
-    .isUUID().withMessage('Invalid cafe ID format'),
+    .isString().withMessage('Cafe ID must be a string'),
   body('stationType')
     .optional()
     .isIn(['pc', 'console']).withMessage('Station type must be "pc" or "console"'),
@@ -51,7 +51,7 @@ const bookingValidation = [
 const checkAvailabilityValidation = [
   body('cafeId')
     .notEmpty().withMessage('Cafe ID is required')
-    .isUUID().withMessage('Invalid cafe ID format'),
+    .isString().withMessage('Cafe ID must be a string'),
   body('stationType')
     .optional()
     .isIn(['pc', 'console']).withMessage('Station type must be "pc" or "console"'),
