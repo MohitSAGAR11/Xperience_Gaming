@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
@@ -133,18 +134,66 @@ class CafeDetailsScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 12),
 
-                      // Address
-                      Row(
-                        children: [
-                          const Icon(Icons.location_on, color: AppColors.cyberCyan, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              cafe.fullAddress,
-                              style: const TextStyle(color: AppColors.textSecondary),
+                      // Address - Clickable
+                      InkWell(
+                        onTap: () async {
+                          try {
+                            debugPrint('🗺️ [MAP_LINK] Attempting to open map');
+                            debugPrint('🗺️ [MAP_LINK] mapsLink value: "${cafe.mapsLink}"');
+                            debugPrint('🗺️ [MAP_LINK] isEmpty: ${cafe.mapsLink.isEmpty}');
+                            
+                            if (cafe.mapsLink.isEmpty) {
+                              debugPrint('🗺️ [MAP_LINK] ERROR: mapsLink is empty!');
+                              return;
+                            }
+                            
+                            final uri = Uri.parse(cafe.mapsLink);
+                            debugPrint('🗺️ [MAP_LINK] Parsed URI: $uri');
+                            
+                            final canLaunch = await canLaunchUrl(uri);
+                            debugPrint('🗺️ [MAP_LINK] canLaunchUrl result: $canLaunch');
+                            
+                            if (canLaunch) {
+                              debugPrint('🗺️ [MAP_LINK] Launching with externalApplication mode...');
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                              debugPrint('🗺️ [MAP_LINK] Launch successful!');
+                            } else {
+                              debugPrint('🗺️ [MAP_LINK] Trying platformDefault mode...');
+                              await launchUrl(uri);
+                            }
+                          } catch (e) {
+                            debugPrint('🗺️ [MAP_LINK] ERROR: $e');
+                            // Try alternative URL format
+                            try {
+                              debugPrint('🗺️ [MAP_LINK] Trying fallback URL...');
+                              final fallbackUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(cafe.fullAddress)}');
+                              await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+                              debugPrint('🗺️ [MAP_LINK] Fallback successful!');
+                            } catch (fallbackError) {
+                              debugPrint('🗺️ [MAP_LINK] Fallback failed: $fallbackError');
+                            }
+                          }
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.location_on, color: AppColors.cyberCyan, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                cafe.fullAddress,
+                                style: const TextStyle(
+                                  color: AppColors.cyberCyan,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 4),
+                            const Icon(Icons.open_in_new, color: AppColors.cyberCyan, size: 16),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 8),
 
@@ -195,17 +244,6 @@ class CafeDetailsScreen extends ConsumerWidget {
                         subtitle: '${cafe.totalPcStations} stations available',
                         price: cafe.effectivePcRate,
                       ),
-                      if (cafe.hasConsoles)
-                        ...cafe.consoles.entries
-                            .where((e) => e.value.quantity > 0)
-                            .map((e) => _PricingCard(
-                                  icon: ConsoleUtils.getIcon(e.key),
-                                  title: ConsoleUtils.getDisplayName(e.key),
-                                  subtitle: '${e.value.quantity} units available',
-                                  price: e.value.hourlyRate > 0
-                                      ? e.value.hourlyRate
-                                      : cafe.hourlyRate,
-                                )),
                       const SizedBox(height: 24),
 
                       // PC Specs

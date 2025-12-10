@@ -103,18 +103,35 @@ class CafeService {
     String cafeId,
     String date,
   ) async {
+    print('📅 [CAFE_SERVICE] getCafeAvailability called - cafeId: $cafeId, date: $date');
     final response = await _apiClient.get<Map<String, dynamic>>(
       '${ApiConstants.cafes}/$cafeId/availability',
       queryParameters: {'date': date},
     );
 
+    print('📅 [CAFE_SERVICE] Response isSuccess: ${response.isSuccess}');
+    print('📅 [CAFE_SERVICE] Response data: ${response.data}');
+
     if (response.isSuccess && response.data != null) {
       final data = response.data!;
+      print('📅 [CAFE_SERVICE] Data success: ${data['success']}');
+      print('📅 [CAFE_SERVICE] Data has "data" field: ${data['data'] != null}');
+      
       if (data['success'] == true && data['data'] != null) {
-        return CafeAvailability.fromJson(data['data']);
+        print('📅 [CAFE_SERVICE] Parsing CafeAvailability from JSON...');
+        try {
+          final availability = CafeAvailability.fromJson(data['data']);
+          print('📅 [CAFE_SERVICE] Successfully parsed availability!');
+          return availability;
+        } catch (e, stackTrace) {
+          print('📅 [CAFE_SERVICE] ERROR parsing availability: $e');
+          print('📅 [CAFE_SERVICE] Stack trace: $stackTrace');
+          return null;
+        }
       }
     }
 
+    print('📅 [CAFE_SERVICE] Returning null - no valid data');
     return null;
   }
 

@@ -95,32 +95,15 @@ class OwnerDashboardScreen extends ConsumerWidget {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _StatCard(
-                              icon: Icons.sports_esports,
-                              title: 'Total Consoles',
-                              value: cafes
-                                  .fold<int>(0, (sum, c) => sum + c.totalConsoles)
-                                  .toString(),
-                              color: AppColors.success,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              icon: Icons.star,
-                              title: 'Avg Rating',
-                              value: cafes.isEmpty
-                                  ? '0.0'
-                                  : (cafes.fold<double>(0, (sum, c) => sum + c.rating) /
-                                          cafes.length)
-                                      .toStringAsFixed(1),
-                              color: AppColors.warning,
-                            ),
-                          ),
-                        ],
+                      _StatCard(
+                        icon: Icons.star,
+                        title: 'Avg Rating',
+                        value: cafes.isEmpty
+                            ? '0.0'
+                            : (cafes.fold<double>(0, (sum, c) => sum + c.rating) /
+                                    cafes.length)
+                                .toStringAsFixed(1),
+                        color: AppColors.warning,
                       ),
                     ],
                   ),
@@ -263,7 +246,7 @@ class OwnerDashboardScreen extends ConsumerWidget {
                                       ),
                                     ),
                                     Text(
-                                      '${cafe.totalPcStations} PCs • ${cafe.totalConsoles} Consoles',
+                                      '${cafe.totalPcStations} PCs',
                                       style: const TextStyle(
                                         color: AppColors.textSecondary,
                                         fontSize: 12,

@@ -79,12 +79,16 @@ const createCafe = async (req, res) => {
       updatedAt: new Date()
     };
 
+    console.log('📍 Creating cafe with mapsLink:', cafeData.mapsLink);
+
     const docRef = await db.collection('cafes').add(cafeData);
     const cafeDoc = await docRef.get();
     const cafe = {
       id: cafeDoc.id,
       ...cafeDoc.data()
     };
+
+    console.log('📍 Cafe created, mapsLink saved:', cafe.mapsLink);
 
     res.status(201).json({
       success: true,
@@ -374,8 +378,7 @@ const updateCafe = async (req, res) => {
       'name', 'description', 'address', 'city', 'state', 'zipCode',
       'latitude', 'longitude', 'hourlyRate', 'openingTime', 'closingTime',
       'totalPcStations', 'pcHourlyRate', 'pcSpecs', 'pcGames',
-      'consoles', 'totalConsoles',
-      'photos', 'amenities', 'availableGames', 'isActive'
+      'photos', 'amenities', 'availableGames', 'isActive', 'mapsLink'
     ];
 
     const updateData = {
@@ -387,6 +390,8 @@ const updateCafe = async (req, res) => {
         updateData[field] = req.body[field];
       }
     });
+
+    console.log('📍 Updating cafe with mapsLink:', updateData.mapsLink);
 
     await db.collection('cafes').doc(req.params.id).update(updateData);
 
@@ -513,7 +518,7 @@ const getMyCafes = async (req, res) => {
 };
 
 /**
- * @desc    Get available time slots for a cafe on a specific date (PC and Consoles)
+ * @desc    Get available time slots for a cafe on a specific date (PC only)
  * @route   GET /api/cafes/:id/availability
  * @access  Public
  */
@@ -522,15 +527,24 @@ const getCafeAvailability = async (req, res) => {
     const { date } = req.query;
     const cafeId = req.params.id;
 
+    console.log('📅 [GET_AVAILABILITY] Request received');
+    console.log('📅 [GET_AVAILABILITY] Cafe ID:', cafeId);
+    console.log('📅 [GET_AVAILABILITY] Date param:', date);
+    console.log('📅 [GET_AVAILABILITY] Query params:', req.query);
+
     if (!date) {
+      console.log('📅 [GET_AVAILABILITY] ERROR: Date parameter missing!');
       return res.status(400).json({
         success: false,
         message: 'Date is required'
       });
     }
 
+    console.log('📅 [GET_AVAILABILITY] Fetching cafe from Firestore...');
     const cafeDoc = await db.collection('cafes').doc(cafeId).get();
+    
     if (!cafeDoc.exists) {
+      console.log('📅 [GET_AVAILABILITY] ERROR: Cafe not found!');
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
@@ -541,8 +555,11 @@ const getCafeAvailability = async (req, res) => {
       id: cafeDoc.id,
       ...cafeDoc.data()
     };
+    console.log('📅 [GET_AVAILABILITY] Cafe found:', cafe.name);
+    console.log('📅 [GET_AVAILABILITY] Total PC stations:', cafe.totalPcStations);
 
     // Get all bookings for the cafe on that date
+    console.log('📅 [GET_AVAILABILITY] Fetching bookings...');
     const bookingsSnapshot = await db.collection('bookings')
       .where('cafeId', '==', cafeId)
       .where('bookingDate', '==', date)
@@ -552,10 +569,13 @@ const getCafeAvailability = async (req, res) => {
       id: doc.id,
       ...doc.data()
     })).filter(b => ['pending', 'confirmed'].includes(b.status));
+    console.log('📅 [GET_AVAILABILITY] Found', bookings.length, 'bookings');
 
     // Create PC availability map
     const pcAvailability = {};
     const totalPcStations = cafe.totalPcStations || 0;
+    console.log('📅 [GET_AVAILABILITY] Building PC availability map...');
+    
     for (let i = 1; i <= totalPcStations; i++) {
       pcAvailability[i] = {
         station: i,
@@ -568,36 +588,8 @@ const getCafeAvailability = async (req, res) => {
       };
     }
 
-    // Create Console availability map per console type
-    const consoleAvailability = {};
-    const consoleTypes = ['ps5', 'ps4', 'xbox_series_x', 'xbox_series_s', 'xbox_one', 'nintendo_switch'];
-    const consoles = cafe.consoles || {};
-    
-    for (const consoleType of consoleTypes) {
-      const consoleInfo = consoles[consoleType];
-      if (consoleInfo && consoleInfo.quantity > 0) {
-        consoleAvailability[consoleType] = {
-          quantity: consoleInfo.quantity,
-          hourlyRate: consoleInfo.hourlyRate,
-          games: consoleInfo.games || [],
-          units: {}
-        };
-        
-        for (let i = 1; i <= consoleInfo.quantity; i++) {
-          consoleAvailability[consoleType].units[i] = {
-            unit: i,
-            bookedSlots: bookings
-              .filter(b => b.stationType === 'console' && b.consoleType === consoleType && b.stationNumber === i)
-              .map(b => ({
-                startTime: b.startTime,
-                endTime: b.endTime
-              }))
-          };
-        }
-      }
-    }
-
-    res.json({
+    console.log('📅 [GET_AVAILABILITY] Sending response...');
+    const response = {
       success: true,
       data: {
         cafeId,
@@ -608,10 +600,12 @@ const getCafeAvailability = async (req, res) => {
           totalStations: totalPcStations,
           hourlyRate: cafe.pcHourlyRate || cafe.hourlyRate,
           availability: pcAvailability
-        },
-        consoles: consoleAvailability
+        }
       }
-    });
+    };
+    console.log('📅 [GET_AVAILABILITY] Response data:', JSON.stringify(response, null, 2));
+    res.json(response);
+    console.log('📅 [GET_AVAILABILITY] Response sent successfully!');
   } catch (error) {
     console.error('Get availability error:', error);
     res.status(500).json({

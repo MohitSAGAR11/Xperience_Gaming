@@ -1,19 +1,28 @@
-# Run this script as Administrator to allow port 5000 through Windows Firewall
+# XPerience Gaming - Firewall Rule Setup
+# Run this script as Administrator to add permanent firewall rule
 
-Write-Host "Adding Windows Firewall rule for Node.js Backend (Port 5000)..." -ForegroundColor Cyan
+$ruleName = "XPerience Gaming Backend - Port 5000"
 
-# Add inbound rule for TCP port 5000
-New-NetFirewallRule -DisplayName "Node.js Backend Port 5000" `
+# Check if rule already exists
+$existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+
+if ($existingRule) {
+    Write-Host "Firewall rule already exists. Removing old rule..." -ForegroundColor Yellow
+    Remove-NetFirewallRule -DisplayName $ruleName
+}
+
+# Create new firewall rule
+Write-Host "Creating firewall rule for port 5000..." -ForegroundColor Green
+New-NetFirewallRule -DisplayName $ruleName `
     -Direction Inbound `
     -LocalPort 5000 `
     -Protocol TCP `
     -Action Allow `
-    -Profile Any
+    -Profile Domain,Private,Public `
+    -Enabled True
 
-Write-Host "✅ Firewall rule added successfully!" -ForegroundColor Green
+Write-Host "✅ Firewall rule created successfully!" -ForegroundColor Green
+Write-Host "Your backend server on port 5000 is now accessible from your phone." -ForegroundColor Green
 Write-Host ""
-Write-Host "Port 5000 is now accessible from your network." -ForegroundColor Green
-Write-Host ""
-Write-Host "Test from your phone's browser:" -ForegroundColor Yellow
-Write-Host "http://10.10.4.37:5000/api/health" -ForegroundColor White
-
+Write-Host "Press any key to exit..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

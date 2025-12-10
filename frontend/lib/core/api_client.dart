@@ -24,9 +24,14 @@ final dioProvider = Provider<Dio>((ref) {
     InterceptorsWrapper(
       onRequest: (options, handler) async {
         // Add Firebase ID token to requests
+        print('🌐 [API_CLIENT] Getting Firebase token...');
         final token = await FirebaseService.getIdToken();
         if (token != null) {
+          print('🌐 [API_CLIENT] Token obtained: ${token.substring(0, 20)}...');
           options.headers['Authorization'] = 'Bearer $token';
+          print('🌐 [API_CLIENT] Authorization header set');
+        } else {
+          print('🌐 [API_CLIENT] WARNING: No token available!');
         }
         return handler.next(options);
       },

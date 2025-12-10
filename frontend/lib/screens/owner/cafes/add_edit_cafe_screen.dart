@@ -28,6 +28,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
   final _descriptionController = TextEditingController();
   final _addressController = TextEditingController();
   final _cityController = TextEditingController();
+  final _mapsLinkController = TextEditingController();
   final _hourlyRateController = TextEditingController();
   final _totalPcStationsController = TextEditingController();
 
@@ -43,18 +44,9 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
   TimeOfDay _openingTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _closingTime = const TimeOfDay(hour: 22, minute: 0);
 
-  // Console data - stores quantity and hourly rate for each console type
-  final Map<String, int> _consoleQuantities = {};
-  final Map<String, TextEditingController> _consoleRateControllers = {};
-
   @override
   void initState() {
     super.initState();
-    // Initialize console rate controllers
-    for (final type in AppConstants.consoleTypes) {
-      _consoleRateControllers[type] = TextEditingController();
-      _consoleQuantities[type] = 0;
-    }
     
     if (isEditing) {
       _loadCafeData();
@@ -78,6 +70,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
         _descriptionController.text = cafe.description ?? '';
         _addressController.text = cafe.address;
         _cityController.text = cafe.city;
+        _mapsLinkController.text = cafe.mapsLink;
         _hourlyRateController.text = cafe.hourlyRate.toString();
         _totalPcStationsController.text = cafe.totalPcStations.toString();
         _latitude = cafe.latitude;
@@ -86,12 +79,6 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
         // Load operating hours
         _openingTime = _parseTimeString(cafe.openingTime);
         _closingTime = _parseTimeString(cafe.closingTime);
-        
-        // Load console data
-        for (final entry in cafe.consoles.entries) {
-          _consoleQuantities[entry.key] = entry.value.quantity;
-          _consoleRateControllers[entry.key]?.text = entry.value.hourlyRate.toString();
-        }
         
         _isDataLoading = false;
       });
@@ -109,11 +96,9 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
     _descriptionController.dispose();
     _addressController.dispose();
     _cityController.dispose();
+    _mapsLinkController.dispose();
     _hourlyRateController.dispose();
     _totalPcStationsController.dispose();
-    for (final controller in _consoleRateControllers.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
@@ -203,32 +188,18 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
 
     final cafeService = ref.read(cafeServiceProvider);
 
-    // Build console data
-    final Map<String, dynamic> consolesData = {};
-    for (final type in AppConstants.consoleTypes) {
-      final qty = _consoleQuantities[type] ?? 0;
-      if (qty > 0) {
-        final rate = double.tryParse(_consoleRateControllers[type]?.text ?? '') ?? 0;
-        consolesData[type] = {
-          'quantity': qty,
-          'hourlyRate': rate > 0 ? rate : double.parse(_hourlyRateController.text),
-          'games': [],
-        };
-      }
-    }
-
     final cafeData = {
       'name': _nameController.text.trim(),
       'description': _descriptionController.text.trim(),
       'address': _addressController.text.trim(),
       'city': _cityController.text.trim(),
+      'mapsLink': _mapsLinkController.text.trim(),
       'hourlyRate': double.parse(_hourlyRateController.text),
       'totalPcStations': int.parse(_totalPcStationsController.text),
       'latitude': _latitude,
       'longitude': _longitude,
       'openingTime': _formatTimeOfDay(_openingTime),
       'closingTime': _formatTimeOfDay(_closingTime),
-      'consoles': consolesData,
     };
 
     final response = isEditing
@@ -311,6 +282,15 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
                 hint: 'City name',
                 prefixIcon: Icons.location_city,
                 validator: (v) => Validators.validateRequired(v, 'City'),
+              ),
+              const SizedBox(height: 16),
+              NeonTextField(
+                controller: _mapsLinkController,
+                label: 'Google Maps Link',
+                hint: 'Paste Google Maps URL of your cafe',
+                prefixIcon: Icons.map,
+                keyboardType: TextInputType.url,
+                validator: (v) => Validators.validateUrl(v, 'Google Maps link'),
               ),
               const SizedBox(height: 16),
               
@@ -501,30 +481,6 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Console Section
-              const _SectionHeader(title: 'Gaming Consoles (Optional)'),
-              const SizedBox(height: 8),
-              const Text(
-                'Add consoles available at your cafe with quantity and rates',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...AppConstants.consoleTypes.map((type) => _ConsoleRow(
-                consoleType: type,
-                displayName: AppConstants.consoleDisplayNames[type] ?? type,
-                quantity: _consoleQuantities[type] ?? 0,
-                rateController: _consoleRateControllers[type]!,
-                onQuantityChanged: (qty) {
-                  setState(() {
-                    _consoleQuantities[type] = qty;
-                  });
-                },
-              )),
-              const SizedBox(height: 32),
-
               // Save Button
               GlowButton(
                 text: isEditing ? 'UPDATE CAFE' : 'CREATE CAFE',
@@ -534,7 +490,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
               const SizedBox(height: 16),
               if (!isEditing)
                 const Text(
-                  'You can add games, console inventory, and photos after creating the cafe.',
+                  'You can add games, PC specs, and photos after creating the cafe.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textMuted,
@@ -616,164 +572,6 @@ class _CoordinateDisplay extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ConsoleRow extends StatelessWidget {
-  final String consoleType;
-  final String displayName;
-  final int quantity;
-  final TextEditingController rateController;
-  final ValueChanged<int> onQuantityChanged;
-
-  const _ConsoleRow({
-    required this.consoleType,
-    required this.displayName,
-    required this.quantity,
-    required this.rateController,
-    required this.onQuantityChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isEnabled = quantity > 0;
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isEnabled ? AppColors.surfaceDark : AppColors.cardDark,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isEnabled ? AppColors.cyberCyan.withOpacity(0.5) : AppColors.cardDark,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                ConsoleUtils.getIcon(consoleType),
-                color: isEnabled ? AppColors.cyberCyan : AppColors.textMuted,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  displayName,
-                  style: TextStyle(
-                    color: isEnabled ? AppColors.textPrimary : AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              // Quantity controls
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.trueBlack,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove, size: 18),
-                      color: AppColors.textMuted,
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(),
-                      onPressed: quantity > 0
-                          ? () => onQuantityChanged(quantity - 1)
-                          : null,
-                    ),
-                    Container(
-                      width: 32,
-                      alignment: Alignment.center,
-                      child: Text(
-                        quantity.toString(),
-                        style: TextStyle(
-                          color: isEnabled ? AppColors.cyberCyan : AppColors.textMuted,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.add, size: 18),
-                      color: AppColors.cyberCyan,
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(),
-                      onPressed: () => onQuantityChanged(quantity + 1),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isEnabled) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text(
-                  'Hourly Rate: ₹',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 80,
-                  child: TextField(
-                    controller: rateController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 14,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Rate',
-                      hintStyle: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 13,
-                      ),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      filled: true,
-                      fillColor: AppColors.trueBlack,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  '/hr',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 13,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${quantity} unit${quantity > 1 ? 's' : ''}',
-                  style: const TextStyle(
-                    color: AppColors.cyberCyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

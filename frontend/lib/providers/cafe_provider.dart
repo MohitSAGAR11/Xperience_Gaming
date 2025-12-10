@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/cafe_model.dart';
@@ -50,6 +51,78 @@ final searchCafesProvider = FutureProvider.autoDispose
   final response = await cafeService.getAllCafes(search: query);
   return response.cafes;
 });
+
+/// All Cafes with Distance Provider - Shows all cafes sorted by distance from user
+/// When search query is provided, filters by cafe name
+final allCafesWithDistanceProvider = FutureProvider.autoDispose
+    .family<List<Cafe>, String>((ref, searchQuery) async {
+  final cafeService = ref.watch(cafeServiceProvider);
+  final locationState = ref.watch(locationProvider);
+
+  // If no location, return empty list
+  if (locationState.location == null) {
+    return [];
+  }
+
+  final userLat = locationState.location!.latitude;
+  final userLon = locationState.location!.longitude;
+
+  // If searching, get filtered cafes
+  if (searchQuery.isNotEmpty) {
+    final response = await cafeService.getAllCafes(search: searchQuery);
+    final cafes = response.cafes;
+    
+    // Calculate distance for each cafe and sort by distance
+    for (var cafe in cafes) {
+      final distance = _calculateDistance(
+        userLat,
+        userLon,
+        cafe.latitude,
+        cafe.longitude,
+      );
+      // Note: We can't modify the cafe object directly, but the distance
+      // will be calculated by the cafe card when needed
+    }
+    
+    // Sort by distance (closest first)
+    cafes.sort((a, b) {
+      final distA = _calculateDistance(userLat, userLon, a.latitude, a.longitude);
+      final distB = _calculateDistance(userLat, userLon, b.latitude, b.longitude);
+      return distA.compareTo(distB);
+    });
+    
+    return cafes;
+  }
+
+  // If not searching, get all nearby cafes (already sorted by distance)
+  final response = await cafeService.getNearbyCafes(
+    latitude: userLat,
+    longitude: userLon,
+    radius: 50.0, // Increased radius to show more cafes
+  );
+
+  return response.cafes;
+});
+
+/// Helper function to calculate distance between two points (Haversine formula)
+double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  const double earthRadius = 6371; // Earth's radius in kilometers
+  
+  final dLat = _toRadians(lat2 - lat1);
+  final dLon = _toRadians(lon2 - lon1);
+  
+  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+      math.cos(_toRadians(lat1)) * math.cos(_toRadians(lat2)) *
+      math.sin(dLon / 2) * math.sin(dLon / 2);
+  
+  final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  
+  return earthRadius * c;
+}
+
+double _toRadians(double degrees) {
+  return degrees * math.pi / 180;
+}
 
 /// Single Cafe Provider
 final cafeProvider = FutureProvider.autoDispose

@@ -33,11 +33,20 @@ class FirebaseService {
   /// Get Firebase ID token for backend authentication
   static Future<String?> getIdToken({bool forceRefresh = false}) async {
     final user = auth.currentUser;
-    if (user == null) return null;
+    if (user == null) {
+      print('🔐 [FIREBASE] ERROR: No current user when getting token!');
+      return null;
+    }
     try {
+      print('🔐 [FIREBASE] Getting token for user: ${user.uid}');
       final token = await user.getIdToken(forceRefresh);
-      if (forceRefresh) {
-        print('🔐 [FIREBASE] Token force refreshed');
+      if (token != null) {
+        print('🔐 [FIREBASE] Token obtained successfully (length: ${token.length})');
+        if (forceRefresh) {
+          print('🔐 [FIREBASE] Token force refreshed');
+        }
+      } else {
+        print('🔐 [FIREBASE] WARNING: Token is null!');
       }
       return token;
     } catch (e) {

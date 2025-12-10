@@ -155,50 +155,20 @@ class Validators {
     }
     return null;
   }
+
+  /// URL validation
+  static String? validateUrl(String? value, String fieldName) {
+    if (value == null || value.trim().isEmpty) {
+      return '$fieldName is required';
+    }
+    if (!value.startsWith('http://') && !value.startsWith('https://')) {
+      return 'Please enter a valid URL starting with http:// or https://';
+    }
+    return null;
+  }
 }
 
 /// Console Type Utilities
-class ConsoleUtils {
-  /// Get display name for console type
-  static String getDisplayName(String consoleType) {
-    return AppConstants.consoleDisplayNames[consoleType] ?? consoleType;
-  }
-
-  /// Get icon for console type
-  static IconData getIcon(String consoleType) {
-    switch (consoleType) {
-      case 'ps5':
-      case 'ps4':
-        return Icons.sports_esports;
-      case 'xbox_series_x':
-      case 'xbox_series_s':
-      case 'xbox_one':
-        return Icons.gamepad;
-      case 'nintendo_switch':
-        return Icons.videogame_asset;
-      default:
-        return Icons.games;
-    }
-  }
-
-  /// Get color for console type
-  static Color getColor(String consoleType) {
-    switch (consoleType) {
-      case 'ps5':
-      case 'ps4':
-        return const Color(0xFF003087); // PlayStation Blue
-      case 'xbox_series_x':
-      case 'xbox_series_s':
-      case 'xbox_one':
-        return const Color(0xFF107C10); // Xbox Green
-      case 'nintendo_switch':
-        return const Color(0xFFE60012); // Nintendo Red
-      default:
-        return Colors.grey;
-    }
-  }
-}
-
 /// Booking Status Utilities
 class BookingStatusUtils {
   /// Get status color

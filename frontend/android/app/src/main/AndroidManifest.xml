@@ -41,12 +41,22 @@
             android:value="2"/>
     </application>
     
-    <!-- Required for network requests in debug mode -->
+    <!-- Required for url_launcher and map intents -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <!-- For Google Maps -->
+        <package android:name="com.google.android.apps.maps"/>
     </queries>
 </manifest>
 

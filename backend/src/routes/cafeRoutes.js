@@ -26,6 +26,10 @@ const cafeValidation = [
   body('city')
     .trim()
     .notEmpty().withMessage('City is required'),
+  body('mapsLink')
+    .trim()
+    .notEmpty().withMessage('Google Maps link is required')
+    .isURL().withMessage('Please provide a valid URL'),
   body('latitude')
     .notEmpty().withMessage('Latitude is required')
     .isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
@@ -48,13 +52,6 @@ const cafeValidation = [
   body('pcGames')
     .optional()
     .isArray().withMessage('PC games must be an array'),
-  // Console fields
-  body('consoles')
-    .optional()
-    .isObject().withMessage('Consoles must be an object'),
-  body('totalConsoles')
-    .optional()
-    .isInt({ min: 0 }).withMessage('Total consoles must be 0 or more'),
   // Time fields
   body('openingTime')
     .optional()

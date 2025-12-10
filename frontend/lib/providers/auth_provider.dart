@@ -1,11 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
-
 import '../config/constants.dart';
 import '../core/storage.dart';
 import '../core/firebase_service.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+
 
 /// Auth State
 class AuthState {
@@ -37,7 +37,6 @@ class AuthState {
 
   /// Check if user is owner
   bool get isOwner => user?.role == AppConstants.roleOwner;
-
   /// Check if user is client
   bool get isClient => user?.role == AppConstants.roleClient;
 }
@@ -66,7 +65,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           print('🔐 [AUTH_LISTENER] Skipping - isRegistering=$_isRegistering, isLoading=${state.isLoading}');
           return;
         }
-        
         print('🔐 [AUTH_LISTENER] Auth state changed: user=${firebaseUser?.uid ?? "null"}');
         
         if (firebaseUser == null) {

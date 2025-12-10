@@ -25,7 +25,6 @@ class SlotSelectionScreen extends ConsumerStatefulWidget {
 
 class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   String _stationType = AppConstants.stationTypePc;
-  String? _consoleType;
   DateTime _selectedDate = DateTime.now();
   String? _startTime;
   String? _endTime;
@@ -72,6 +71,20 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     int closeHour = int.tryParse(closeParts[0]) ?? 22;
     int closeMinute = closeParts.length > 1 ? (int.tryParse(closeParts[1]) ?? 0) : 0;
     
+    print('📅 [GENERATE_SLOTS] Original - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
+    
+    // Store original values for validation
+    final originalOpenHour = openHour;
+    final originalCloseHour = closeHour;
+    final crossesMidnight = closeHour < openHour;
+    
+    // If closing hour is less than opening hour, it means the cafe closes after midnight
+    // Add 24 hours to closing hour for calculation
+    if (crossesMidnight) {
+      closeHour += 24;
+      print('📅 [GENERATE_SLOTS] Closing time is next day, adjusted close hour to: $closeHour');
+    }
+    
     // Round opening minute to nearest 30
     if (openMinute > 0 && openMinute < 30) {
       openMinute = 30;
@@ -80,12 +93,16 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       openHour++;
     }
     
-    // Generate 30-minute slots
+    print('📅 [GENERATE_SLOTS] After rounding - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
+    
+    // Generate 30-minute slots from opening to closing
     int currentHour = openHour;
     int currentMinute = openMinute;
     
     while (currentHour < closeHour || (currentHour == closeHour && currentMinute <= closeMinute)) {
-      final timeStr = '${currentHour.toString().padLeft(2, '0')}:${currentMinute.toString().padLeft(2, '0')}';
+      // For display, show hour in 24-hour format (wrap around after 23)
+      final displayHour = currentHour % 24;
+      final timeStr = '${displayHour.toString().padLeft(2, '0')}:${currentMinute.toString().padLeft(2, '0')}';
       slots.add(timeStr);
       
       // Increment by 30 minutes
@@ -95,8 +112,17 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         currentHour++;
       }
       
-      // Safety check to prevent infinite loop
-      if (slots.length > 48) break;
+      // Safety check to prevent infinite loop (max 48 slots = 24 hours)
+      if (slots.length > 48) {
+        print('📅 [GENERATE_SLOTS] WARNING: Reached max slot limit (48)');
+        break;
+      }
+    }
+    
+    print('📅 [GENERATE_SLOTS] Generated ${slots.length} slots');
+    if (slots.isNotEmpty) {
+      print('📅 [GENERATE_SLOTS] First slot: ${slots.first}, Last slot: ${slots.last}');
+      print('📅 [GENERATE_SLOTS] Crosses midnight: $crossesMidnight');
     }
     
     setState(() {
@@ -107,27 +133,44 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   /// Load cafe hours for generating time slots
   Future<void> _loadAvailability() async {
     try {
+      print('📅 [SLOT_SELECTION] Loading availability...');
       final dateStr = DateTimeUtils.formatDateForApi(_selectedDate);
+      print('📅 [SLOT_SELECTION] Date formatted: $dateStr');
       
       // Fetch cafe info to get opening/closing times
       final cafeService = ref.read(cafeServiceProvider);
+      print('📅 [SLOT_SELECTION] Calling getCafeAvailability...');
       final availability = await cafeService.getCafeAvailability(
         widget.cafeId,
         dateStr,
       );
       
+      print('📅 [SLOT_SELECTION] Availability response: ${availability != null ? "received" : "null"}');
+      
       if (mounted && availability != null) {
+        print('📅 [SLOT_SELECTION] Opening time: ${availability.openingTime}');
+        print('📅 [SLOT_SELECTION] Closing time: ${availability.closingTime}');
+        print('📅 [SLOT_SELECTION] Total stations: ${availability.pc?.totalStations}');
+        
         setState(() {
           _availability = availability;
           
           // Update time slots based on cafe operating hours
           if (availability.openingTime.isNotEmpty && 
               availability.closingTime.isNotEmpty) {
+            print('📅 [SLOT_SELECTION] Generating time slots...');
             _generateTimeSlots(availability.openingTime, availability.closingTime);
+            print('📅 [SLOT_SELECTION] Generated ${_timeSlots.length} time slots');
+          } else {
+            print('📅 [SLOT_SELECTION] ERROR: Empty opening/closing times!');
           }
         });
+      } else {
+        print('📅 [SLOT_SELECTION] ERROR: Availability is null or widget unmounted!');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('📅 [SLOT_SELECTION] ERROR loading cafe hours: $e');
+      print('📅 [SLOT_SELECTION] Stack trace: $stackTrace');
       debugPrint('Error loading cafe hours: $e');
     }
   }
@@ -154,6 +197,74 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       return hour * 60 + minute;
     }
     return 0;
+  }
+
+  /// Check if a time is in the closed period (between closing and opening)
+  /// This prevents selecting times during closed hours as START time
+  bool _isInClosedPeriod(String time) {
+    if (_availability == null) return false;
+
+    final timeMins = _timeToMinutes(time);
+    final openMins = _timeToMinutes(_availability!.openingTime);
+    final closeMins = _timeToMinutes(_availability!.closingTime);
+
+    // If closing time is after opening time (same day), no wraparound
+    if (closeMins > openMins) {
+      // Normal operation (e.g., 09:00 to 22:00)
+      // No closed period during the day
+      return false;
+    }
+
+    // Closing time is before opening time (crosses midnight)
+    // Closed period: from closing to opening next day
+    // e.g., closes 01:00 (60 mins), opens 09:00 (540 mins)
+    // Closed period: 01:00 to 09:00 (exclusive of closing, inclusive of opening-1)
+    // So times in range (60, 540) are closed
+    return timeMins > closeMins && timeMins < openMins;
+  }
+
+  /// Check if a time is valid as an end time given the current start time
+  bool _isValidEndTime(String endTime) {
+    if (_startTime == null || _availability == null) return false;
+
+    final startMins = _timeToMinutes(_startTime!);
+    final endMins = _timeToMinutes(endTime);
+    final openMins = _timeToMinutes(_availability!.openingTime);
+    final closeMins = _timeToMinutes(_availability!.closingTime);
+
+    // Determine if cafe crosses midnight
+    final crossesMidnight = closeMins < openMins;
+
+    int adjustedStartMins = startMins;
+    int adjustedEndMins = endMins;
+    int adjustedCloseMins = closeMins;
+
+    if (crossesMidnight) {
+      // Cafe crosses midnight (e.g., 09:00 to 01:00 next day)
+      adjustedCloseMins = closeMins + 24 * 60; // 01:00 becomes 1500 mins (25:00)
+
+      // If end time is after midnight (less than opening), adjust it
+      if (endMins <= closeMins && endMins < openMins) {
+        adjustedEndMins = endMins + 24 * 60;
+      }
+
+      // If start time is after midnight, adjust it too
+      if (startMins <= closeMins && startMins < openMins) {
+        adjustedStartMins = startMins + 24 * 60;
+      }
+    }
+
+    // End time must be strictly after start time
+    if (adjustedEndMins <= adjustedStartMins) {
+      return false;
+    }
+
+    // End time must not exceed closing time
+    if (adjustedEndMins > adjustedCloseMins) {
+      return false;
+    }
+
+    return true;
   }
 
   /// Check if two time ranges overlap
@@ -206,7 +317,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       final response = await bookingService.getAvailableStations(
         cafeId: widget.cafeId,
         stationType: _stationType,
-        consoleType: _stationType == AppConstants.stationTypeConsole ? _consoleType : null,
+        consoleType: null,
         bookingDate: DateTimeUtils.formatDateForApi(_selectedDate),
         startTime: _startTime!,
         endTime: _endTime!,
@@ -270,7 +381,6 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       print('🎫 [SLOT_SELECTION] Creating booking request...');
       print('🎫 Cafe ID: ${widget.cafeId}');
       print('🎫 Station Type: $_stationType');
-      print('🎫 Console Type: ${_stationType == 'console' ? _consoleType : null}');
       print('🎫 Station Number: $_selectedStation');
       print('🎫 Date: ${DateTimeUtils.formatDateForApi(_selectedDate)}');
       print('🎫 Start Time: $_startTime');
@@ -282,7 +392,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         BookingRequest(
           cafeId: widget.cafeId,
           stationType: _stationType,
-          consoleType: _stationType == 'console' ? _consoleType : null,
+          consoleType: null,
           stationNumber: _selectedStation!,
           bookingDate: DateTimeUtils.formatDateForApi(_selectedDate),
           startTime: _startTime!,
@@ -324,6 +434,227 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         setState(() => _isLoading = false);
         SnackbarUtils.showError(context, 'Booking failed: $e');
       }
+    }
+  }
+
+  /// Show booking confirmation bottom sheet
+  Future<void> _showBookingConfirmation() async {
+    final cafe = ref.read(cafeProvider(widget.cafeId)).valueOrNull;
+    if (cafe == null) return;
+
+    // Calculate duration and price
+    final startMinutes = _timeToMinutes(_startTime!);
+    int endMinutes = _timeToMinutes(_endTime!);
+    
+    // Handle midnight crossing
+    if (endMinutes < startMinutes) {
+      endMinutes += 24 * 60; // Add 24 hours
+    }
+    
+    final durationHours = (endMinutes - startMinutes) / 60.0;
+    
+    // Get hourly rate
+    double hourlyRate = cafe.hourlyRate;
+    if (_stationType == AppConstants.stationTypePc && cafe.pcHourlyRate != null) {
+      hourlyRate = cafe.pcHourlyRate!;
+    }
+    
+    final totalAmount = hourlyRate * durationHours;
+
+    // Show confirmation bottom sheet
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceDark,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.cyberCyan.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.receipt_long,
+                    color: AppColors.cyberCyan,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Confirm Booking',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Review your booking details',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  icon: const Icon(Icons.close, color: AppColors.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Booking Details
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.cardDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.neonPurple.withOpacity(0.3)),
+              ),
+              child: Column(
+                children: [
+                  _ConfirmationRow(
+                    icon: Icons.store,
+                    label: 'Cafe',
+                    value: cafe.name,
+                  ),
+                  const Divider(color: AppColors.surfaceDark, height: 24),
+                  _ConfirmationRow(
+                    icon: Icons.computer,
+                    label: 'Station',
+                    value: 'PC #$_selectedStation',
+                  ),
+                  const Divider(color: AppColors.surfaceDark, height: 24),
+                  _ConfirmationRow(
+                    icon: Icons.calendar_today,
+                    label: 'Date',
+                    value: DateTimeUtils.formatDate(_selectedDate),
+                  ),
+                  const Divider(color: AppColors.surfaceDark, height: 24),
+                  _ConfirmationRow(
+                    icon: Icons.access_time,
+                    label: 'Time',
+                    value: '${DateTimeUtils.formatTimeString(_startTime!)} - ${DateTimeUtils.formatTimeString(_endTime!)}',
+                  ),
+                  const Divider(color: AppColors.surfaceDark, height: 24),
+                  _ConfirmationRow(
+                    icon: Icons.timer,
+                    label: 'Duration',
+                    value: DateTimeUtils.formatDuration(durationHours),
+                  ),
+                  const Divider(color: AppColors.surfaceDark, height: 24),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.cyberCyan.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.payments,
+                          color: AppColors.cyberCyan,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Total Amount',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        CurrencyUtils.formatINR(totalAmount),
+                        style: const TextStyle(
+                          color: AppColors.cyberCyan,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 22,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Payment Note
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.warning, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Pay at the cafe when you arrive',
+                      style: TextStyle(
+                        color: AppColors.warning,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: CyberOutlineButton(
+                    text: 'Cancel',
+                    onPressed: () => Navigator.of(context).pop(false),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: GlowButton(
+                    text: 'CONFIRM BOOKING',
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+          ],
+        ),
+      ),
+    );
+
+    // If confirmed, proceed with booking
+    if (confirmed == true && mounted) {
+      _confirmBooking();
     }
   }
 
@@ -393,117 +724,24 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    if (cafe.hasPcs)
-                      Expanded(
-                        child: _TypeCard(
-                          icon: Icons.computer,
-                          title: 'PC',
-                          subtitle: '${cafe.totalPcStations} stations',
-                          isSelected: _stationType == AppConstants.stationTypePc,
-                          onTap: () {
-                            setState(() {
-                              _stationType = AppConstants.stationTypePc;
-                              _consoleType = null;
-                              _availableCount = 0;
-                              _selectedStation = null;
-                            });
-                            // Call async function AFTER setState
-                            if (_startTime != null && _endTime != null) {
-                              _updateAvailableCount();
-                            }
-                          },
-                        ),
-                      ),
-                    if (cafe.hasPcs && cafe.hasConsoles)
-                      const SizedBox(width: 12),
-                    if (cafe.hasConsoles)
-                      Expanded(
-                        child: _TypeCard(
-                          icon: Icons.sports_esports,
-                          title: 'Console',
-                          subtitle: '${cafe.totalConsoles} units',
-                          isSelected: _stationType == AppConstants.stationTypeConsole,
-                          onTap: () {
-                            setState(() {
-                              _stationType = AppConstants.stationTypeConsole;
-                              _consoleType = cafe.availableConsoleTypes.isNotEmpty 
-                                  ? cafe.availableConsoleTypes.first 
-                                  : null;
-                              _availableCount = 0;
-                              _selectedStation = null;
-                            });
-                            // Call async function AFTER setState
-                            if (_startTime != null && _endTime != null) {
-                              _updateAvailableCount();
-                            }
-                          },
-                        ),
-                      ),
-                  ],
+                _TypeCard(
+                  icon: Icons.computer,
+                  title: 'PC',
+                  subtitle: '${cafe.totalPcStations} stations',
+                  isSelected: _stationType == AppConstants.stationTypePc,
+                  onTap: () {
+                    setState(() {
+                      _stationType = AppConstants.stationTypePc;
+                      _availableCount = 0;
+                      _selectedStation = null;
+                    });
+                    // Call async function AFTER setState
+                    if (_startTime != null && _endTime != null) {
+                      _updateAvailableCount();
+                    }
+                  },
                 ),
                 const SizedBox(height: 24),
-
-                // Console Type Selection
-                if (_stationType == AppConstants.stationTypeConsole &&
-                    cafe.availableConsoleTypes.isNotEmpty) ...[
-                  const Text(
-                    'Select Console',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: cafe.availableConsoleTypes.map((type) {
-                      final info = cafe.consoles[type]!;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _consoleType = type;
-                            _availableCount = 0;
-                            _selectedStation = null;
-                          });
-                          // Call async function AFTER setState
-                          if (_startTime != null && _endTime != null) {
-                            _updateAvailableCount();
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _consoleType == type
-                                ? AppColors.neonPurple.withOpacity(0.15)
-                                : AppColors.surfaceDark,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: _consoleType == type
-                                  ? AppColors.neonPurple
-                                  : AppColors.cardDark,
-                            ),
-                          ),
-                          child: Text(
-                            '${ConsoleUtils.getDisplayName(type)} (${info.quantity})',
-                            style: TextStyle(
-                              color: _consoleType == type
-                                  ? AppColors.neonPurple
-                                  : AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 24),
-                ],
 
                 // Date Selection
                 const Text(
@@ -652,7 +890,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                               const SizedBox(height: 6),
                               Text(
                                 _availableCount > 0
-                                    ? '$_availableCount ${_stationType == 'pc' ? 'PC' : _consoleType ?? 'console'}${_availableCount > 1 ? 's' : ''} available'
+                                    ? '$_availableCount PC${_availableCount > 1 ? 's' : ''} available'
                                     : 'No availability for this time',
                                 style: TextStyle(
                                   color: _availableCount > 0 
@@ -728,10 +966,27 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                     children: _timeSlots.map((time) {
                       final isStart = _startTime == time;
                       final isEnd = _endTime == time;
-                      final isInRange = _startTime != null &&
-                          _endTime != null &&
-                          _timeToMinutes(time) > _timeToMinutes(_startTime!) &&
-                          _timeToMinutes(time) < _timeToMinutes(_endTime!);
+                      // Check if time is in selected range (handle midnight crossing)
+                      bool isInRange = false;
+                      if (_startTime != null && _endTime != null) {
+                        final timeMins = _timeToMinutes(time);
+                        final startMins = _timeToMinutes(_startTime!);
+                        int endMins = _timeToMinutes(_endTime!);
+                        
+                        // If end is before start, it crosses midnight
+                        if (endMins < startMins) {
+                          endMins += 24 * 60;
+                          // If current time is also before start, adjust it
+                          int adjustedTimeMins = timeMins;
+                          if (timeMins < startMins) {
+                            adjustedTimeMins = timeMins + 24 * 60;
+                          }
+                          isInRange = adjustedTimeMins > startMins && adjustedTimeMins < endMins;
+                        } else {
+                          // Normal case - no midnight crossing
+                          isInRange = timeMins > startMins && timeMins < endMins;
+                        }
+                      }
 
                       return GestureDetector(
                         onTap: () {
@@ -740,7 +995,8 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                           
                           // Calculate before setState
                           if (_startTime != null && _endTime == null) {
-                            if (_timeToMinutes(time) > _timeToMinutes(_startTime!)) {
+                            // Check if this time is valid as end time
+                            if (_isValidEndTime(time)) {
                               shouldFetch = true; // Will set end time, need to fetch
                             }
                           }
@@ -748,19 +1004,29 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                           setState(() {
                             if (_startTime == null) {
                               // First tap: set start time
-                              _startTime = time;
-                              _endTime = null;
-                              _availableCount = 0;
-                              _selectedStation = null;
-                            } else if (_endTime == null) {
-                              // Second tap: set end time (must be after start)
-                              if (_timeToMinutes(time) > _timeToMinutes(_startTime!)) {
-                                _endTime = time;
-                              } else {
-                                // Clicked before start time, reset start
+                              // Validate: start time must not be in closed period
+                              if (!_isInClosedPeriod(time)) {
                                 _startTime = time;
+                                _endTime = null;
                                 _availableCount = 0;
                                 _selectedStation = null;
+                              } else {
+                                SnackbarUtils.showError(context, 'Cannot start booking during closed hours');
+                              }
+                            } else if (_endTime == null) {
+                              // Second tap: set end time (must be after start, considering midnight)
+                              if (_isValidEndTime(time)) {
+                                _endTime = time;
+                              } else {
+                                // Clicked invalid time, reset to new start
+                                if (!_isInClosedPeriod(time)) {
+                                  _startTime = time;
+                                  _endTime = null;
+                                  _availableCount = 0;
+                                  _selectedStation = null;
+                                } else {
+                                  SnackbarUtils.showError(context, 'Cannot start booking during closed hours');
+                                }
                               }
                             } else {
                               // Third tap: reset and start new selection
@@ -834,7 +1100,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                     : 'SELECT TIME SLOT',
             isLoading: _isLoading,
             onPressed: _startTime != null && _endTime != null && _availableCount > 0
-                ? _confirmBooking
+                ? _showBookingConfirmation
                 : null,
           ),
         ),
@@ -900,6 +1166,63 @@ class _TypeCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Confirmation Row Widget for Bottom Sheet
+class _ConfirmationRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _ConfirmationRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.neonPurple.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: AppColors.neonPurple,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

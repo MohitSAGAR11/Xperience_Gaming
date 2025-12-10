@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/theme.dart';
 import '../models/cafe_model.dart';
@@ -166,32 +167,75 @@ class CafeCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Address
-                  Row(
-                    children: [
-                      const Icon(Icons.place, color: AppColors.textMuted, size: 16),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          '${cafe.address}, ${cafe.city}',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
+                  // Address - Clickable
+                  InkWell(
+                    onTap: () async {
+                      try {
+                        debugPrint('🗺️ [MAP_LINK] Attempting to open map');
+                        debugPrint('🗺️ [MAP_LINK] mapsLink value: "${cafe.mapsLink}"');
+                        debugPrint('🗺️ [MAP_LINK] isEmpty: ${cafe.mapsLink.isEmpty}');
+                        
+                        if (cafe.mapsLink.isEmpty) {
+                          debugPrint('🗺️ [MAP_LINK] ERROR: mapsLink is empty!');
+                          return;
+                        }
+                        
+                        final uri = Uri.parse(cafe.mapsLink);
+                        debugPrint('🗺️ [MAP_LINK] Parsed URI: $uri');
+                        
+                        final canLaunch = await canLaunchUrl(uri);
+                        debugPrint('🗺️ [MAP_LINK] canLaunchUrl result: $canLaunch');
+                        
+                        if (canLaunch) {
+                          debugPrint('🗺️ [MAP_LINK] Launching with externalApplication mode...');
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                          debugPrint('🗺️ [MAP_LINK] Launch successful!');
+                        } else {
+                          debugPrint('🗺️ [MAP_LINK] Trying platformDefault mode...');
+                          await launchUrl(uri);
+                        }
+                      } catch (e) {
+                        debugPrint('🗺️ [MAP_LINK] ERROR: $e');
+                        // Try alternative URL format
+                        try {
+                          debugPrint('🗺️ [MAP_LINK] Trying fallback URL...');
+                          final fallbackUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(cafe.address + ' ' + cafe.city)}');
+                          await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+                          debugPrint('🗺️ [MAP_LINK] Fallback successful!');
+                        } catch (fallbackError) {
+                          debugPrint('🗺️ [MAP_LINK] Fallback failed: $fallbackError');
+                        }
+                      }
+                    },
+                    child: Row(
+                      children: [
+                        const Icon(Icons.place, color: AppColors.cyberCyan, size: 16),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '${cafe.address}, ${cafe.city}',
+                            style: const TextStyle(
+                              color: AppColors.cyberCyan,
+                              fontSize: 13,
+                              decoration: TextDecoration.underline,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        const Icon(Icons.open_in_new, color: AppColors.cyberCyan, size: 12),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   // Stats Row
                   Row(
                     children: [
                       _buildStat(Icons.computer, '${cafe.totalPcStations} PCs'),
-                      const SizedBox(width: 16),
-                      if (cafe.hasConsoles)
-                        _buildStat(Icons.sports_esports, '${cafe.totalConsoles} Consoles'),
                       const Spacer(),
                       // Price
                       Container(

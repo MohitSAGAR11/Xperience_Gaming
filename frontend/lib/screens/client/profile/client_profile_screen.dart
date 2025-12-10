@@ -57,9 +57,7 @@ class ClientProfileScreen extends ConsumerWidget {
             _ProfileMenuItem(
               icon: Icons.person_outline,
               title: 'Edit Profile',
-              onTap: () {
-                // TODO: Navigate to edit profile
-              },
+              onTap: () => context.push(Routes.editClientProfile),
             ),
             _ProfileMenuItem(
               icon: Icons.lock_outline,

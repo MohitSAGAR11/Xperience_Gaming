@@ -73,9 +73,7 @@ class OwnerProfileScreen extends ConsumerWidget {
             _ProfileMenuItem(
               icon: Icons.person_outline,
               title: 'Edit Profile',
-              onTap: () {
-                // TODO: Navigate to edit profile
-              },
+              onTap: () => context.push(Routes.editOwnerProfile),
             ),
             _ProfileMenuItem(
               icon: Icons.store_outlined,

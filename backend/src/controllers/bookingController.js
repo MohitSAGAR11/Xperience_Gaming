@@ -21,7 +21,12 @@ const timeToMinutes = (time) => {
  */
 const calculateDuration = (startTime, endTime) => {
   const startMinutes = timeToMinutes(startTime);
-  const endMinutes = timeToMinutes(endTime);
+  let endMinutes = timeToMinutes(endTime);
+  
+  // Handle midnight crossing: if end is before start, add 24 hours
+  if (endMinutes < startMinutes) {
+    endMinutes += 24 * 60;
+  }
   
   return (endMinutes - startMinutes) / 60;
 };
@@ -124,7 +129,15 @@ const getMaxStations = (cafe, stationType, consoleType) => {
  */
 const getAvailableStations = async (cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations) => {
   const reqStartMins = timeToMinutes(startTime);
-  const reqEndMins = timeToMinutes(endTime);
+  let reqEndMins = timeToMinutes(endTime);
+  
+  // Handle midnight crossing for requested time
+  // If end time is before start time, booking crosses midnight
+  if (reqEndMins < reqStartMins) {
+    reqEndMins += 24 * 60; // Add 24 hours
+    console.log('🎯 [GET_AVAILABLE] Requested booking crosses midnight:', startTime, 'to', endTime);
+    console.log('🎯 [GET_AVAILABLE] Adjusted end mins:', reqEndMins);
+  }
   
   let query = db.collection('bookings')
     .where('cafeId', '==', cafeId)
@@ -140,6 +153,8 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
     .map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(b => ['pending', 'confirmed'].includes(b.status));
 
+  console.log('🎯 [GET_AVAILABLE] Checking', maxStations, 'stations against', existingBookings.length, 'bookings');
+
   const availableStations = [];
 
   for (let station = 1; station <= maxStations; station++) {
@@ -147,10 +162,18 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
     
     let hasConflict = false;
     for (const booking of stationBookings) {
-      const bookedStartMins = timeToMinutes(booking.startTime);
-      const bookedEndMins = timeToMinutes(booking.endTime);
+      let bookedStartMins = timeToMinutes(booking.startTime);
+      let bookedEndMins = timeToMinutes(booking.endTime);
       
+      // Handle midnight crossing for existing booking
+      if (bookedEndMins < bookedStartMins) {
+        bookedEndMins += 24 * 60;
+      }
+      
+      // Check for overlap with adjusted times
+      // Overlap exists if: reqStart < bookedEnd AND reqEnd > bookedStart
       if (reqStartMins < bookedEndMins && reqEndMins > bookedStartMins) {
+        console.log(`🎯 [GET_AVAILABLE] Station ${station} CONFLICT: Req(${reqStartMins}-${reqEndMins}) vs Booked(${bookedStartMins}-${bookedEndMins})`);
         hasConflict = true;
         break;
       }
@@ -161,6 +184,7 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
     }
   }
 
+  console.log('🎯 [GET_AVAILABLE] Available stations found:', availableStations.length);
   return availableStations;
 };
 
@@ -390,7 +414,11 @@ const getAvailableStationsAPI = async (req, res) => {
   try {
     const { cafeId, stationType, consoleType, bookingDate, startTime, endTime } = req.query;
 
+    console.log('🎯 [AVAILABLE_STATIONS] ========================================');
+    console.log('🎯 [AVAILABLE_STATIONS] Request:', { cafeId, stationType, bookingDate, startTime, endTime });
+
     if (!cafeId || !stationType || !bookingDate || !startTime || !endTime) {
+      console.log('🎯 [AVAILABLE_STATIONS] ERROR: Missing required fields');
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: cafeId, stationType, bookingDate, startTime, endTime'
@@ -399,19 +427,33 @@ const getAvailableStationsAPI = async (req, res) => {
 
     const cafe = await getCafeData(cafeId);
     if (!cafe) {
+      console.log('🎯 [AVAILABLE_STATIONS] ERROR: Cafe not found');
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
+    console.log('🎯 [AVAILABLE_STATIONS] Cafe found:', cafe.name);
+    console.log('🎯 [AVAILABLE_STATIONS] Cafe hours:', cafe.openingTime, 'to', cafe.closingTime);
 
     // Validate time is within cafe hours
     const bookingStartMins = timeToMinutes(startTime);
     const bookingEndMins = timeToMinutes(endTime);
     const cafeOpenMins = timeToMinutes(cafe.openingTime);
-    const cafeCloseMins = timeToMinutes(cafe.closingTime);
+    let cafeCloseMins = timeToMinutes(cafe.closingTime);
 
-    if (bookingStartMins < cafeOpenMins || bookingEndMins > cafeCloseMins) {
+    // Handle closing time past midnight (e.g., 01:00 when opening is 09:00)
+    if (cafeCloseMins < cafeOpenMins) {
+      cafeCloseMins += 24 * 60; // Add 24 hours in minutes
+    }
+
+    console.log('🎯 [AVAILABLE_STATIONS] Time validation:');
+    console.log(`🎯   Booking: ${startTime} (${bookingStartMins}m) → ${endTime} (${bookingEndMins}m)`);
+    console.log(`🎯   Cafe: ${cafe.openingTime} (${cafeOpenMins}m) → ${cafe.closingTime} (${cafeCloseMins}m)`);
+
+    // Check if booking start is before opening
+    if (bookingStartMins < cafeOpenMins) {
+      console.log('🎯 [AVAILABLE_STATIONS] ERROR: Start time before opening');
       const formatTime = (t) => t ? t.substring(0, 5) : '';
       return res.status(400).json({
         success: false,
@@ -421,9 +463,31 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
+    // Check if booking end is after closing
+    // If end time is less than start time, it means booking goes past midnight
+    let adjustedEndMins = bookingEndMins;
+    if (bookingEndMins < bookingStartMins) {
+      adjustedEndMins += 24 * 60;
+      console.log('🎯 [AVAILABLE_STATIONS] End time crosses midnight, adjusted to:', adjustedEndMins);
+    }
+
+    if (adjustedEndMins > cafeCloseMins) {
+      console.log(`🎯 [AVAILABLE_STATIONS] ERROR: End time after closing (${adjustedEndMins} > ${cafeCloseMins})`);
+      const formatTime = (t) => t ? t.substring(0, 5) : '';
+      return res.status(400).json({
+        success: false,
+        message: `Time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`,
+        availableStations: [],
+        totalStations: 0
+      });
+    }
+    console.log('🎯 [AVAILABLE_STATIONS] Time validation passed!');
+
     const maxStations = getMaxStations(cafe, stationType, consoleType);
+    console.log('🎯 [AVAILABLE_STATIONS] Max stations:', maxStations);
     
     if (maxStations === 0) {
+      console.log('🎯 [AVAILABLE_STATIONS] No stations of this type');
       return res.json({
         success: true,
         data: {
@@ -434,14 +498,18 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
+    console.log('🎯 [AVAILABLE_STATIONS] Checking availability...');
     const availableStations = await getAvailableStations(
       cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations
     );
 
+    console.log('🎯 [AVAILABLE_STATIONS] Available stations:', availableStations);
+    console.log('🎯 [AVAILABLE_STATIONS] Available count:', availableStations.length);
+
     const durationHours = calculateDuration(startTime, endTime);
     const hourlyRate = getHourlyRate(cafe, stationType, consoleType);
 
-    res.json({
+    const response = {
       success: true,
       data: {
         availableStations,
@@ -454,7 +522,11 @@ const getAvailableStationsAPI = async (req, res) => {
           estimatedTotal: durationHours * hourlyRate
         }
       }
-    });
+    };
+
+    console.log('🎯 [AVAILABLE_STATIONS] Sending response:', JSON.stringify(response, null, 2));
+    console.log('🎯 [AVAILABLE_STATIONS] ========================================');
+    res.json(response);
   } catch (error) {
     console.error('Get available stations error:', error);
     res.status(500).json({

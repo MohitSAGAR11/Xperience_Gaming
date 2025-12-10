@@ -5,6 +5,7 @@ import 'dart:async';
 
 import '../../../config/theme.dart';
 import '../../../providers/cafe_provider.dart';
+import '../../../providers/location_provider.dart';
 import '../../../widgets/cafe_card.dart';
 import '../../../widgets/loading_widget.dart';
 import '../../../widgets/input_field.dart';
@@ -58,7 +59,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final searchResults = ref.watch(searchCafesProvider(_searchQuery));
+    final searchResults = ref.watch(allCafesWithDistanceProvider(_searchQuery));
+    final locationState = ref.watch(locationProvider);
 
     return Scaffold(
       backgroundColor: AppColors.trueBlack,
@@ -73,7 +75,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             padding: const EdgeInsets.all(16),
             child: SearchField(
               controller: _searchController,
-              hint: 'Search cafes, games...',
+              hint: 'Search cafes by name...',
               autofocus: widget.initialQuery == null,
               onChanged: (value) {
                 if (value.length >= 2 || value.isEmpty) {
@@ -85,50 +87,40 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
 
-          // Popular Searches (when no query)
-          if (_searchQuery.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Popular Games',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _SearchChip(label: 'Valorant', onTap: () => _performSearch('Valorant')),
-                      _SearchChip(label: 'CS2', onTap: () => _performSearch('CS2')),
-                      _SearchChip(label: 'GTA V', onTap: () => _performSearch('GTA')),
-                      _SearchChip(label: 'Fortnite', onTap: () => _performSearch('Fortnite')),
-                      _SearchChip(label: 'FIFA 24', onTap: () => _performSearch('FIFA')),
-                      _SearchChip(label: 'Call of Duty', onTap: () => _performSearch('COD')),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-          // Search Results
+          // Search Results - Always show cafes sorted by distance
           Expanded(
-            child: _searchQuery.isEmpty
-                ? const Center(
+            child: locationState.location == null
+                ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search, size: 64, color: AppColors.textMuted),
-                        SizedBox(height: 16),
-                        Text(
-                          'Search for cafes or games',
+                        const Icon(Icons.location_off, size: 64, color: AppColors.textMuted),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Location Required',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Enable location to find cafes near you',
                           style: TextStyle(color: AppColors.textSecondary),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: () => ref
+                              .read(locationProvider.notifier)
+                              .getCurrentLocation(),
+                          icon: const Icon(Icons.my_location),
+                          label: const Text('Enable Location'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.cyberCyan,
+                            foregroundColor: AppColors.trueBlack,
+                          ),
                         ),
                       ],
                     ),
@@ -137,9 +129,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     data: (cafes) {
                       if (cafes.isEmpty) {
                         return EmptyState(
-                          icon: Icons.search_off,
-                          title: 'No results found',
-                          subtitle: 'Try a different search term',
+                          icon: _searchQuery.isEmpty ? Icons.store_outlined : Icons.search_off,
+                          title: _searchQuery.isEmpty 
+                              ? 'No cafes nearby' 
+                              : 'No results found',
+                          subtitle: _searchQuery.isEmpty
+                              ? 'Try expanding your search area'
+                              : 'Try a different search term',
                         );
                       }
 
@@ -150,7 +146,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           final cafe = cafes[index];
                           return CafeCard(
                             cafe: cafe,
-                            showDistance: false,
+                            showDistance: true,
                             onTap: () => context.push('/client/cafe/${cafe.id}'),
                           );
                         },
@@ -163,37 +159,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ),
                     error: (error, stack) => ErrorDisplay(
                       message: error.toString(),
-                      onRetry: () => ref.invalidate(searchCafesProvider(_searchQuery)),
+                      onRetry: () => ref.invalidate(allCafesWithDistanceProvider(_searchQuery)),
                     ),
                   ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SearchChip extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-
-  const _SearchChip({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceDark,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.cardDark),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(color: AppColors.textSecondary),
-        ),
       ),
     );
   }

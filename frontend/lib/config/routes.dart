@@ -13,12 +13,14 @@ import '../screens/client/booking/slot_selection_screen.dart';
 import '../screens/client/booking/booking_confirmation_screen.dart';
 import '../screens/client/bookings/my_bookings_screen.dart';
 import '../screens/client/profile/client_profile_screen.dart';
+import '../screens/client/profile/edit_profile_screen.dart' as client;
 import '../screens/owner/owner_main_screen.dart';
 import '../screens/owner/dashboard/owner_dashboard_screen.dart';
 import '../screens/owner/cafes/my_cafes_screen.dart';
 import '../screens/owner/cafes/add_edit_cafe_screen.dart';
 import '../screens/owner/bookings/cafe_bookings_screen.dart';
 import '../screens/owner/profile/owner_profile_screen.dart';
+import '../screens/owner/profile/edit_profile_screen.dart' as owner;
 
 /// Route Names
 class Routes {
@@ -35,6 +37,7 @@ class Routes {
   static const String bookingConfirmation = '/client/booking/confirm';
   static const String myBookings = '/client/bookings';
   static const String clientProfile = '/client/profile';
+  static const String editClientProfile = '/client/profile/edit';
   
   // Owner Routes
   static const String ownerDashboard = '/owner';
@@ -43,6 +46,7 @@ class Routes {
   static const String editCafe = '/owner/cafes/:id/edit';
   static const String cafeBookings = '/owner/cafes/:id/bookings';
   static const String ownerProfile = '/owner/profile';
+  static const String editOwnerProfile = '/owner/profile/edit';
 }
 
 /// Router Configuration
@@ -102,6 +106,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       
       // Client Detail Routes (outside shell)
       GoRoute(
+        path: Routes.editClientProfile,
+        name: 'editClientProfile',
+        builder: (context, state) => const client.EditProfileScreen(),
+      ),
+      GoRoute(
         path: Routes.cafeDetails,
         name: 'cafeDetails',
         builder: (context, state) {
@@ -149,6 +158,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       
       // Owner Detail Routes (outside shell)
+      GoRoute(
+        path: Routes.editOwnerProfile,
+        name: 'editOwnerProfile',
+        builder: (context, state) => const owner.EditProfileScreen(),
+      ),
       GoRoute(
         path: Routes.addCafe,
         name: 'addCafe',

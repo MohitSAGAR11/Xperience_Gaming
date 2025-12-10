@@ -5,7 +5,8 @@ class ApiConstants {
   // iOS Simulator: localhost
   // Physical Device: Your PC's IP (e.g., 192.168.4.128)
   // IMPORTANT: For physical device, use your PC's IP address!
-  static const String baseUrl = 'http://10.10.4.37:5000/api';
+  // Current PC IP: 10.10.4.50 (Updated: 2025-12-10)
+  static const String baseUrl = 'http://10.10.4.50:5000/api';
   
   // Auth Endpoints
   // Note: register/login are handled by Firebase Auth, backend endpoints are:
@@ -44,27 +45,6 @@ class AppConstants {
   
   // Station Types
   static const String stationTypePc = 'pc';
-  static const String stationTypeConsole = 'console';
-  
-  // Console Types
-  static const List<String> consoleTypes = [
-    'ps5',
-    'ps4',
-    'xbox_series_x',
-    'xbox_series_s',
-    'xbox_one',
-    'nintendo_switch',
-  ];
-  
-  // Console Display Names
-  static const Map<String, String> consoleDisplayNames = {
-    'ps5': 'PlayStation 5',
-    'ps4': 'PlayStation 4',
-    'xbox_series_x': 'Xbox Series X',
-    'xbox_series_s': 'Xbox Series S',
-    'xbox_one': 'Xbox One',
-    'nintendo_switch': 'Nintendo Switch',
-  };
   
   // Booking Status
   static const String statusPending = 'pending';

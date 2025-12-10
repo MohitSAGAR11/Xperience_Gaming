@@ -10,6 +10,7 @@ class Cafe {
   final String? zipCode;
   final double latitude;
   final double longitude;
+  final String mapsLink;
   final double hourlyRate;
   final String openingTime;
   final String closingTime;
@@ -17,8 +18,6 @@ class Cafe {
   final double? pcHourlyRate;
   final PcSpecs? pcSpecs;
   final List<String> pcGames;
-  final Map<String, ConsoleInfo> consoles;
-  final int totalConsoles;
   final List<String> photos;
   final List<String> amenities;
   final List<String> availableGames;
@@ -39,6 +38,7 @@ class Cafe {
     this.zipCode,
     required this.latitude,
     required this.longitude,
+    required this.mapsLink,
     required this.hourlyRate,
     required this.openingTime,
     required this.closingTime,
@@ -46,8 +46,6 @@ class Cafe {
     this.pcHourlyRate,
     this.pcSpecs,
     this.pcGames = const [],
-    this.consoles = const {},
-    this.totalConsoles = 0,
     this.photos = const [],
     this.amenities = const [],
     this.availableGames = const [],
@@ -59,17 +57,6 @@ class Cafe {
   });
 
   factory Cafe.fromJson(Map<String, dynamic> json) {
-    // Parse consoles
-    Map<String, ConsoleInfo> consolesMap = {};
-    if (json['consoles'] != null && json['consoles'] is Map) {
-      final consolesJson = json['consoles'] as Map<String, dynamic>;
-      consolesJson.forEach((key, value) {
-        if (value is Map<String, dynamic>) {
-          consolesMap[key] = ConsoleInfo.fromJson(value);
-        }
-      });
-    }
-
     return Cafe(
       id: json['id'] ?? '',
       ownerId: json['ownerId'] ?? '',
@@ -81,6 +68,7 @@ class Cafe {
       zipCode: json['zipCode'],
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
+      mapsLink: json['mapsLink'] ?? '',
       hourlyRate: _parseDouble(json['hourlyRate']),
       openingTime: json['openingTime'] ?? '09:00:00',
       closingTime: json['closingTime'] ?? '23:00:00',
@@ -92,8 +80,6 @@ class Cafe {
           ? PcSpecs.fromJson(json['pcSpecs'])
           : null,
       pcGames: _parseStringList(json['pcGames']),
-      consoles: consolesMap,
-      totalConsoles: json['totalConsoles'] ?? 0,
       photos: _parseStringList(json['photos']),
       amenities: _parseStringList(json['amenities']),
       availableGames: _parseStringList(json['availableGames']),
@@ -117,6 +103,7 @@ class Cafe {
       'zipCode': zipCode,
       'latitude': latitude,
       'longitude': longitude,
+      'mapsLink': mapsLink,
       'hourlyRate': hourlyRate,
       'openingTime': openingTime,
       'closingTime': closingTime,
@@ -124,8 +111,6 @@ class Cafe {
       'pcHourlyRate': pcHourlyRate,
       'pcSpecs': pcSpecs?.toJson(),
       'pcGames': pcGames,
-      'consoles': consoles.map((k, v) => MapEntry(k, v.toJson())),
-      'totalConsoles': totalConsoles,
       'photos': photos,
       'amenities': amenities,
       'availableGames': availableGames,
@@ -156,17 +141,6 @@ class Cafe {
     }
     return '${distance!.toStringAsFixed(1)}km away';
   }
-
-  /// Get available console types
-  List<String> get availableConsoleTypes {
-    return consoles.entries
-        .where((e) => e.value.quantity > 0)
-        .map((e) => e.key)
-        .toList();
-  }
-
-  /// Has consoles available
-  bool get hasConsoles => totalConsoles > 0;
 
   /// Has PCs available
   bool get hasPcs => totalPcStations > 0;
@@ -230,35 +204,6 @@ class PcSpecs {
 
   /// Check if specs are available
   bool get hasSpecs => cpu.isNotEmpty || gpu.isNotEmpty || ram.isNotEmpty;
-}
-
-/// Console Information
-class ConsoleInfo {
-  final int quantity;
-  final double hourlyRate;
-  final List<String> games;
-
-  ConsoleInfo({
-    this.quantity = 0,
-    this.hourlyRate = 0,
-    this.games = const [],
-  });
-
-  factory ConsoleInfo.fromJson(Map<String, dynamic> json) {
-    return ConsoleInfo(
-      quantity: json['quantity'] ?? 0,
-      hourlyRate: Cafe._parseDouble(json['hourlyRate']),
-      games: json['games'] != null ? List<String>.from(json['games']) : [],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'quantity': quantity,
-      'hourlyRate': hourlyRate,
-      'games': games,
-    };
-  }
 }
 
 /// Cafe Owner (simplified)

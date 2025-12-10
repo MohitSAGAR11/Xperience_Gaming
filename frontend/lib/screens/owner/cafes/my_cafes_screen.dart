@@ -180,11 +180,6 @@ class MyCafesScreen extends ConsumerWidget {
                               label: 'PCs',
                             ),
                             _CafeStat(
-                              icon: Icons.sports_esports,
-                              value: cafe.totalConsoles.toString(),
-                              label: 'Consoles',
-                            ),
-                            _CafeStat(
                               icon: Icons.currency_rupee,
                               value: CurrencyUtils.formatINR(cafe.hourlyRate)
                                   .replaceAll('₹', ''),
