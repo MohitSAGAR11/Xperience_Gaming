@@ -5,7 +5,14 @@ class ApiConstants {
   // iOS Simulator: localhost
   // Physical Device: Your PC's IP (e.g., 192.168.4.128)
   // IMPORTANT: For physical device, use your PC's IP address!
-  // Current PC IP: 10.10.4.50 (Updated: 2025-12-10)
+  // 
+  // TO UPDATE IP:
+  // 1. Run: ipconfig
+  // 2. Find your IPv4 Address (e.g., 192.168.1.100)
+  // 3. Update baseUrl below with YOUR IP
+  // 4. Hot reload/restart app
+  //
+  // Current IP: 10.10.4.50 (verify this is still correct!)
   static const String baseUrl = 'http://10.10.4.50:5000/api';
   
   // Auth Endpoints

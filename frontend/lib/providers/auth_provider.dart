@@ -80,8 +80,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Check current Firebase Auth state
       final firebaseUser = FirebaseService.currentUser;
       if (firebaseUser != null) {
-        final response = await _authService.getProfile();
+        print('🔐 [AUTH_INIT] Firebase user found: ${firebaseUser.uid}');
+        print('🔐 [AUTH_INIT] Fetching profile from backend...');
+        
+        // Add timeout to prevent hanging
+        final response = await _authService.getProfile().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            print('🔐 [AUTH_INIT] Profile fetch timed out, signing out...');
+            FirebaseService.auth.signOut();
+            throw Exception('Profile fetch timed out');
+          },
+        );
+        
         if (response.success && response.user != null) {
+          print('🔐 [AUTH_INIT] Profile fetched successfully');
           await _storage.saveUser(response.user!);
           await _storage.saveRole(response.user!.role);
           state = AuthState(
@@ -91,13 +104,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
           );
         } else {
           // Profile not found - user exists in Firebase but not in our DB
-          // Don't sign them out, just show as unauthenticated
+          // Sign them out to allow fresh registration
+          print('🔐 [AUTH_INIT] Profile not found in backend, signing out Firebase user');
+          await FirebaseService.auth.signOut();
+          await _storage.clearAll();
           state = AuthState(isLoading: false);
         }
       } else {
+        print('🔐 [AUTH_INIT] No Firebase user found');
         state = AuthState(isLoading: false);
       }
     } catch (e) {
+      print('🔐 [AUTH_INIT] Error: $e');
+      await FirebaseService.auth.signOut();
       await _storage.clearAll();
       state = AuthState(isLoading: false, error: e.toString());
     }

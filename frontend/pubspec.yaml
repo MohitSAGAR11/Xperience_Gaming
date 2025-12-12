@@ -59,14 +59,23 @@ dev_dependencies:
   flutter_lints: ^3.0.1
   riverpod_generator: ^2.3.9
   build_runner: ^2.4.8
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
 
-  # Assets removed - add back when you have actual images/icons
-  # assets:
-  #   - assets/images/
-  #   - assets/icons/
+  assets:
+    # - assets/images/
+    - assets/icons/
 
   # Fonts loaded via google_fonts package instead of local files
+
+# App Icon Configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  # Adaptive icon for Android 8.0+ (uses the same image with background color)
+  adaptive_icon_background: "#1A1A2E"  # Your app's dark background color
+  adaptive_icon_foreground: "assets/icons/app_icon.png"  # Use same icon for foreground
 

@@ -167,8 +167,8 @@ class CafeCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Address - Clickable
-                  InkWell(
+                  // Address - Clickable (stops parent GestureDetector)
+                  GestureDetector(
                     onTap: () async {
                       try {
                         debugPrint('🗺️ [MAP_LINK] Attempting to open map');
@@ -220,7 +220,6 @@ class CafeCard extends StatelessWidget {
                             style: const TextStyle(
                               color: AppColors.cyberCyan,
                               fontSize: 13,
-                              decoration: TextDecoration.underline,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

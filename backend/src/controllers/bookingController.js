@@ -285,26 +285,90 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Validate booking time
+    // Validate booking time with midnight crossing support
     const bookingStartMins = timeToMinutes(startTime);
-    const bookingEndMins = timeToMinutes(endTime);
+    let bookingEndMins = timeToMinutes(endTime);
     const cafeOpenMins = timeToMinutes(cafe.openingTime);
-    const cafeCloseMins = timeToMinutes(cafe.closingTime);
+    let cafeCloseMins = timeToMinutes(cafe.closingTime);
     
-    if (bookingStartMins < cafeOpenMins || bookingEndMins > cafeCloseMins) {
-      const formatTime = (t) => t ? t.substring(0, 5) : '';
-      return res.status(400).json({
-        success: false,
-        message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
-      });
+    console.log('⏰ [CREATE_BOOKING] Time validation:');
+    console.log(`⏰   Booking: ${startTime} (${bookingStartMins}m) → ${endTime} (${bookingEndMins}m)`);
+    console.log(`⏰   Cafe: ${cafe.openingTime} (${cafeOpenMins}m) → ${cafe.closingTime} (${cafeCloseMins}m)`);
+    
+    // Detect if cafe crosses midnight (e.g., 09:00 to 01:00)
+    const crossesMidnight = cafeCloseMins < cafeOpenMins;
+    
+    if (crossesMidnight) {
+      // Adjust closing time to next day
+      cafeCloseMins += 24 * 60;
+      console.log(`⏰   Cafe crosses midnight, adjusted close: ${cafeCloseMins}m`);
+      
+      // Adjust booking end if it crosses midnight too
+      if (bookingEndMins < bookingStartMins) {
+        bookingEndMins += 24 * 60;
+        console.log(`⏰   Booking crosses midnight, adjusted end: ${bookingEndMins}m`);
+      }
+      
+      // Adjust booking start if it's after midnight (e.g., 00:30)
+      if (bookingStartMins < cafeOpenMins) {
+        const adjustedStartMins = bookingStartMins + 24 * 60;
+        console.log(`⏰   Booking starts after midnight, adjusted start: ${adjustedStartMins}m`);
+        
+        // Check if adjusted start is within cafe hours
+        if (adjustedStartMins < cafeOpenMins || adjustedStartMins >= cafeCloseMins) {
+          const formatTime = (t) => t ? t.substring(0, 5) : '';
+          return res.status(400).json({
+            success: false,
+            message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
+          });
+        }
+        
+        // Also adjust end time for after-midnight bookings
+        if (bookingEndMins < adjustedStartMins) {
+          bookingEndMins += 24 * 60;
+        }
+        
+        // Validate end time
+        if (bookingEndMins > cafeCloseMins) {
+          const formatTime = (t) => t ? t.substring(0, 5) : '';
+          return res.status(400).json({
+            success: false,
+            message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
+          });
+        }
+        
+        console.log('⏰   Validation passed for after-midnight booking!');
+        // Continue with booking creation
+      } else {
+        // Normal validation for before-midnight start times
+        if (bookingStartMins < cafeOpenMins || bookingEndMins > cafeCloseMins) {
+          const formatTime = (t) => t ? t.substring(0, 5) : '';
+          return res.status(400).json({
+            success: false,
+            message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
+          });
+        }
+      }
+    } else {
+      // Normal same-day operation (e.g., 09:00 to 22:00)
+      if (bookingStartMins < cafeOpenMins || bookingEndMins > cafeCloseMins) {
+        const formatTime = (t) => t ? t.substring(0, 5) : '';
+        return res.status(400).json({
+          success: false,
+          message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
+        });
+      }
+      
+      if (bookingEndMins <= bookingStartMins) {
+        return res.status(400).json({
+          success: false,
+          message: 'End time must be after start time'
+        });
+      }
     }
+    
+    console.log('⏰   Time validation PASSED!');
 
-    if (bookingEndMins <= bookingStartMins) {
-      return res.status(400).json({
-        success: false,
-        message: 'End time must be after start time'
-      });
-    }
 
     // Calculate duration and total amount
     const durationHours = calculateDuration(startTime, endTime);
@@ -436,24 +500,51 @@ const getAvailableStationsAPI = async (req, res) => {
     console.log('🎯 [AVAILABLE_STATIONS] Cafe found:', cafe.name);
     console.log('🎯 [AVAILABLE_STATIONS] Cafe hours:', cafe.openingTime, 'to', cafe.closingTime);
 
-    // Validate time is within cafe hours
-    const bookingStartMins = timeToMinutes(startTime);
-    const bookingEndMins = timeToMinutes(endTime);
+    // Validate time is within cafe hours with proper midnight crossing support
+    let bookingStartMins = timeToMinutes(startTime);
+    let bookingEndMins = timeToMinutes(endTime);
     const cafeOpenMins = timeToMinutes(cafe.openingTime);
     let cafeCloseMins = timeToMinutes(cafe.closingTime);
-
-    // Handle closing time past midnight (e.g., 01:00 when opening is 09:00)
-    if (cafeCloseMins < cafeOpenMins) {
-      cafeCloseMins += 24 * 60; // Add 24 hours in minutes
-    }
 
     console.log('🎯 [AVAILABLE_STATIONS] Time validation:');
     console.log(`🎯   Booking: ${startTime} (${bookingStartMins}m) → ${endTime} (${bookingEndMins}m)`);
     console.log(`🎯   Cafe: ${cafe.openingTime} (${cafeOpenMins}m) → ${cafe.closingTime} (${cafeCloseMins}m)`);
 
-    // Check if booking start is before opening
+    // Detect if cafe crosses midnight (e.g., 09:00 to 01:00)
+    const crossesMidnight = cafeCloseMins < cafeOpenMins;
+    
+    if (crossesMidnight) {
+      // Adjust closing time to next day
+      cafeCloseMins += 24 * 60;
+      console.log(`🎯   Cafe crosses midnight, adjusted close: ${cafeCloseMins}m`);
+      
+      // If booking start is after midnight (e.g., 00:30 = 30 mins)
+      // and less than opening time, it's likely an after-midnight booking
+      if (bookingStartMins < cafeOpenMins) {
+        bookingStartMins += 24 * 60;
+        console.log(`🎯   Booking starts after midnight, adjusted start: ${bookingStartMins}m`);
+      }
+      
+      // If booking end is less than adjusted start, it needs adjustment too
+      if (bookingEndMins < timeToMinutes(startTime)) {
+        bookingEndMins += 24 * 60;
+        console.log(`🎯   Booking end crosses midnight, adjusted end: ${bookingEndMins}m`);
+      } else if (bookingStartMins >= 24 * 60 && bookingEndMins < bookingStartMins) {
+        // Both start and end are after midnight
+        bookingEndMins += 24 * 60;
+        console.log(`🎯   Booking end also after midnight, adjusted end: ${bookingEndMins}m`);
+      }
+    } else {
+      // Normal same-day operation - adjust end if it crosses midnight
+      if (bookingEndMins < bookingStartMins) {
+        bookingEndMins += 24 * 60;
+        console.log(`🎯   Booking crosses midnight, adjusted end: ${bookingEndMins}m`);
+      }
+    }
+
+    // Now validate with adjusted times
     if (bookingStartMins < cafeOpenMins) {
-      console.log('🎯 [AVAILABLE_STATIONS] ERROR: Start time before opening');
+      console.log(`🎯 [AVAILABLE_STATIONS] ERROR: Start time before opening (${bookingStartMins} < ${cafeOpenMins})`);
       const formatTime = (t) => t ? t.substring(0, 5) : '';
       return res.status(400).json({
         success: false,
@@ -463,16 +554,8 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
-    // Check if booking end is after closing
-    // If end time is less than start time, it means booking goes past midnight
-    let adjustedEndMins = bookingEndMins;
-    if (bookingEndMins < bookingStartMins) {
-      adjustedEndMins += 24 * 60;
-      console.log('🎯 [AVAILABLE_STATIONS] End time crosses midnight, adjusted to:', adjustedEndMins);
-    }
-
-    if (adjustedEndMins > cafeCloseMins) {
-      console.log(`🎯 [AVAILABLE_STATIONS] ERROR: End time after closing (${adjustedEndMins} > ${cafeCloseMins})`);
+    if (bookingEndMins > cafeCloseMins) {
+      console.log(`🎯 [AVAILABLE_STATIONS] ERROR: End time after closing (${bookingEndMins} > ${cafeCloseMins})`);
       const formatTime = (t) => t ? t.substring(0, 5) : '';
       return res.status(400).json({
         success: false,
@@ -481,7 +564,8 @@ const getAvailableStationsAPI = async (req, res) => {
         totalStations: 0
       });
     }
-    console.log('🎯 [AVAILABLE_STATIONS] Time validation passed!');
+    
+    console.log('🎯 [AVAILABLE_STATIONS] Time validation PASSED!');
 
     const maxStations = getMaxStations(cafe, stationType, consoleType);
     console.log('🎯 [AVAILABLE_STATIONS] Max stations:', maxStations);

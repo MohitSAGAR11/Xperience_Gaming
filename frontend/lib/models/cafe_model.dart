@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Cafe Model - Matches backend Cafe schema
 class Cafe {
   final String id;
@@ -57,6 +59,11 @@ class Cafe {
   });
 
   factory Cafe.fromJson(Map<String, dynamic> json) {
+    // Warn if mapsLink is missing
+    if (json['mapsLink'] == null || (json['mapsLink'] as String).isEmpty) {
+      debugPrint('⚠️ [CAFE_MODEL] WARNING: Cafe "${json['name']}" (${json['id']}) has no mapsLink!');
+    }
+    
     return Cafe(
       id: json['id'] ?? '',
       ownerId: json['ownerId'] ?? '',

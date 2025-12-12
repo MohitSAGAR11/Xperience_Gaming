@@ -437,15 +437,17 @@ class _AddReviewDialogState extends ConsumerState<AddReviewDialog> {
               TextFormField(
                 controller: _commentController,
                 decoration: const InputDecoration(
-                  labelText: 'Your Review',
+                  labelText: 'Your Review (optional)',
                   border: OutlineInputBorder(),
                   alignLabelWithHint: true,
+                  hintText: 'Share your experience...',
                 ),
                 maxLines: 5,
-                maxLength: 500,
+                maxLength: 1000,
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please write your review';
+                  // Comment is optional - no validation required
+                  if (value != null && value.length > 1000) {
+                    return 'Comment is too long';
                   }
                   return null;
                 },

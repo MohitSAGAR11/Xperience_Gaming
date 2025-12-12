@@ -1,6 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import '../firebase_options.dart';
 
 /// Firebase Service - Initialization and helpers
 class FirebaseService {
@@ -9,7 +11,9 @@ class FirebaseService {
   
   /// Initialize Firebase
   static Future<void> initialize() async {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     
     // Note: Firebase Auth persistence is automatic on mobile platforms
     // On mobile (iOS/Android), auth state persists by default
@@ -17,11 +21,30 @@ class FirebaseService {
     print('🔐 [FIREBASE] Firebase initialized with automatic auth persistence');
     
     // Enable Firestore offline persistence
-    firestore.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
-    print('🔐 [FIREBASE] Firestore persistence enabled');
+    // Configure this first before any Firestore operations
+    try {
+      firestore.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
+      print('🔐 [FIREBASE] Firestore persistence enabled');
+    } catch (e) {
+      print('🔐 [FIREBASE] Warning: Could not configure Firestore persistence: $e');
+    }
+    
+    // DEVELOPMENT ONLY: Disable app verification in debug mode
+    // This prevents the "empty reCAPTCHA token" timeout issue during development
+    // IMPORTANT: This is automatically disabled in production builds (kDebugMode = false)
+    if (kDebugMode) {
+      try {
+        await auth.setSettings(appVerificationDisabledForTesting: true);
+        print('🔐 [FIREBASE] [DEBUG MODE] App verification disabled for testing');
+      } catch (e) {
+        print('🔐 [FIREBASE] Warning: Could not disable app verification: $e');
+      }
+    } else {
+      print('🔐 [FIREBASE] [PRODUCTION MODE] App verification enabled for security');
+    }
   }
   
   /// Get current Firebase user
