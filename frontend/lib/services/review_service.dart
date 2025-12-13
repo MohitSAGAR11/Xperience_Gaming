@@ -141,29 +141,6 @@ class ReviewService {
   }
 }
 
-/// Review Response
-class ReviewResponse {
-  final bool success;
-  final String? message;
-  final Review? review;
-
-  ReviewResponse({
-    required this.success,
-    this.message,
-    this.review,
-  });
-
-  factory ReviewResponse.fromJson(Map<String, dynamic> json) {
-    return ReviewResponse(
-      success: json['success'] ?? false,
-      message: json['message'],
-      review: json['data']?['review'] != null
-          ? Review.fromJson(json['data']['review'])
-          : null,
-    );
-  }
-}
-
 /// Review Service Provider
 final reviewServiceProvider = Provider<ReviewService>((ref) {
   final apiClient = ref.watch(apiClientProvider);

@@ -923,15 +923,26 @@ class _ReviewsSection extends ConsumerWidget {
     );
 
     if (result == true && context.mounted) {
-      // Refresh reviews
+      // Add delay to ensure backend has fully processed the review and rating update
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Force refresh all related providers to fetch fresh data
       ref.invalidate(cafeReviewsProvider);
       ref.invalidate(checkUserReviewProvider);
       ref.invalidate(cafeProvider);
       
-      SnackbarUtils.showSuccess(
-        context,
-        existingReview != null ? 'Review updated successfully!' : 'Review submitted successfully!',
-      );
+      // Also trigger an immediate refresh for the current cafe's reviews
+      await Future.delayed(const Duration(milliseconds: 100));
+      ref.refresh(cafeReviewsProvider(CafeReviewsParams(cafeId: cafeId, limit: 5)));
+      ref.refresh(checkUserReviewProvider(cafeId));
+      ref.refresh(cafeProvider(cafeId));
+      
+      if (context.mounted) {
+        SnackbarUtils.showSuccess(
+          context,
+          existingReview != null ? 'Review updated successfully!' : 'Review submitted successfully!',
+        );
+      }
     }
   }
 

@@ -240,9 +240,7 @@ class CafeCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [AppColors.neonPurple, AppColors.cyberCyan],
-                          ),
+                          color: AppColors.neonPurple,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(

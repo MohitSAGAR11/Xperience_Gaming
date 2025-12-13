@@ -231,6 +231,30 @@ class PaginationInfo {
   }
 }
 
+/// Review Response (for create/update operations)
+class ReviewResponse {
+  final bool success;
+  final String? message;
+  final Review? review;
+
+  ReviewResponse({
+    required this.success,
+    this.message,
+    this.review,
+  });
+
+  factory ReviewResponse.fromJson(Map<String, dynamic> json) {
+    final data = json['data'];
+    return ReviewResponse(
+      success: json['success'] ?? false,
+      message: json['message'],
+      review: data != null && data['review'] != null
+          ? Review.fromJson(data['review'])
+          : null,
+    );
+  }
+}
+
 /// Check User Review Response
 class CheckUserReviewResponse {
   final bool hasReviewed;

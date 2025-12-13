@@ -40,7 +40,9 @@ const createProfile = async (req, res) => {
         data: {
           user: {
             id: userId,
-            ...existingData
+            ...existingData,
+            createdAt: existingData.createdAt?.toDate ? existingData.createdAt.toDate().toISOString() : existingData.createdAt,
+            updatedAt: existingData.updatedAt?.toDate ? existingData.updatedAt.toDate().toISOString() : existingData.updatedAt
           }
         }
       });
@@ -67,7 +69,9 @@ const createProfile = async (req, res) => {
       data: {
         user: {
           id: userId,
-          ...userData
+          ...userData,
+          createdAt: userData.createdAt?.toDate ? userData.createdAt.toDate().toISOString() : userData.createdAt,
+          updatedAt: userData.updatedAt?.toDate ? userData.updatedAt.toDate().toISOString() : userData.updatedAt
         }
       }
     });
@@ -109,7 +113,9 @@ const getMe = async (req, res) => {
       data: {
         user: {
           id: userDoc.id,  // ✅ Add this line
-          ...userData
+          ...userData,
+          createdAt: userData.createdAt?.toDate ? userData.createdAt.toDate().toISOString() : userData.createdAt,
+          updatedAt: userData.updatedAt?.toDate ? userData.updatedAt.toDate().toISOString() : userData.updatedAt
         }
       }
     });
@@ -152,7 +158,9 @@ const updateProfile = async (req, res) => {
       data: {
         user: {
           id: userDoc.id,
-          ...userData
+          ...userData,
+          createdAt: userData.createdAt?.toDate ? userData.createdAt.toDate().toISOString() : userData.createdAt,
+          updatedAt: userData.updatedAt?.toDate ? userData.updatedAt.toDate().toISOString() : userData.updatedAt
         }
       }
     });
@@ -222,11 +230,54 @@ const logout = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Register FCM token for push notifications
+ * @route   POST /api/auth/register-fcm-token
+ * @access  Private
+ */
+const registerFcmToken = async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    const userId = req.user.id;
+
+    console.log('📱 [FCM_TOKEN] Registering token for user:', userId);
+
+    if (!fcmToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'FCM token is required'
+      });
+    }
+
+    // Update user document with FCM token
+    await db.collection('users').doc(userId).update({
+      fcmToken,
+      fcmTokenUpdatedAt: new Date()
+    });
+
+    console.log('📱 [FCM_TOKEN] Token registered successfully for user:', userId);
+
+    res.json({
+      success: true,
+      message: 'FCM token registered successfully'
+    });
+
+  } catch (error) {
+    console.error('📱 [FCM_TOKEN] Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error registering FCM token',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createProfile,
   logout,
   getMe,
   updateProfile,
-  changePassword
+  changePassword,
+  registerFcmToken
 };
 

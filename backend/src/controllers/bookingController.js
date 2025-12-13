@@ -1,5 +1,6 @@
 const { db } = require('../config/firebase');
 const { validationResult } = require('express-validator');
+const { createCommunityPost, deleteCommunityPost } = require('./communityController');
 
 /**
  * Convert time string to minutes since midnight for accurate comparison
@@ -423,6 +424,8 @@ const createBooking = async (req, res) => {
       const booking = {
         id: bookingDoc.id,
         ...bookingData,
+        createdAt: bookingData.createdAt?.toDate ? bookingData.createdAt.toDate().toISOString() : bookingData.createdAt,
+        updatedAt: bookingData.updatedAt?.toDate ? bookingData.updatedAt.toDate().toISOString() : bookingData.updatedAt,
         cafe: cafeData ? {
           id: cafeData.id,
           name: cafeData.name,
@@ -435,6 +438,15 @@ const createBooking = async (req, res) => {
           email: userData.email
         } : null
       };
+
+      // Create community post (show booking activity in community feed)
+      try {
+        await createCommunityPost(booking, cafeData, userData);
+        console.log('🌐 Community post created for booking');
+      } catch (communityError) {
+        // Don't fail booking if community post fails
+        console.error('🌐 Failed to create community post:', communityError);
+      }
 
       res.status(201).json({
         success: true,
@@ -657,8 +669,8 @@ const getMyBookings = async (req, res) => {
     let bookings = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : doc.data().createdAt,
-      updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate() : doc.data().updatedAt
+      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate().toISOString() : doc.data().createdAt,
+      updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate().toISOString() : doc.data().updatedAt
     }));
 
     // Filter by status if needed (in case fallback query was used)
@@ -752,7 +764,9 @@ const getBookingById = async (req, res) => {
     const bookingData = bookingDoc.data();
     const booking = {
       id: bookingDoc.id,
-      ...bookingData
+      ...bookingData,
+      createdAt: bookingData.createdAt?.toDate ? bookingData.createdAt.toDate().toISOString() : bookingData.createdAt,
+      updatedAt: bookingData.updatedAt?.toDate ? bookingData.updatedAt.toDate().toISOString() : bookingData.updatedAt
     };
 
     // Check authorization
@@ -847,10 +861,22 @@ const cancelBooking = async (req, res) => {
     });
 
     const updatedDoc = await db.collection('bookings').doc(req.params.id).get();
+    const updatedBookingData = updatedDoc.data();
     const updatedBooking = {
       id: updatedDoc.id,
-      ...updatedDoc.data()
+      ...updatedBookingData,
+      createdAt: updatedBookingData.createdAt?.toDate ? updatedBookingData.createdAt.toDate().toISOString() : updatedBookingData.createdAt,
+      updatedAt: updatedBookingData.updatedAt?.toDate ? updatedBookingData.updatedAt.toDate().toISOString() : updatedBookingData.updatedAt
     };
+
+    // Delete community post (remove from community feed)
+    try {
+      await deleteCommunityPost(req.params.id);
+      console.log('🌐 Community post deleted for cancelled booking');
+    } catch (communityError) {
+      // Don't fail cancellation if community post deletion fails
+      console.error('🌐 Failed to delete community post:', communityError);
+    }
 
     res.json({
       success: true,
@@ -920,7 +946,9 @@ const getCafeBookings = async (req, res) => {
 
     let bookings = snapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate().toISOString() : doc.data().createdAt,
+      updatedAt: doc.data().updatedAt?.toDate ? doc.data().updatedAt.toDate().toISOString() : doc.data().updatedAt
     }));
 
     // Sort client-side if index wasn't available
@@ -1020,9 +1048,12 @@ const updateBookingStatus = async (req, res) => {
     });
 
     const updatedDoc = await db.collection('bookings').doc(req.params.id).get();
+    const updatedBookingData = updatedDoc.data();
     const updatedBooking = {
       id: updatedDoc.id,
-      ...updatedDoc.data()
+      ...updatedBookingData,
+      createdAt: updatedBookingData.createdAt?.toDate ? updatedBookingData.createdAt.toDate().toISOString() : updatedBookingData.createdAt,
+      updatedAt: updatedBookingData.updatedAt?.toDate ? updatedBookingData.updatedAt.toDate().toISOString() : updatedBookingData.updatedAt
     };
 
     res.json({

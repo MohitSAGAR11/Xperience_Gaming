@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/routes.dart';
 import '../../../core/utils.dart';
 import '../../../providers/booking_provider.dart';
 import '../../../services/booking_service.dart';
@@ -58,13 +60,22 @@ class MyBookingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bookingsAsync = ref.watch(myBookingsProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // Navigate to home instead of exiting app
+          context.go(Routes.clientHome);
+        }
+      },
+      child: Scaffold(
         backgroundColor: AppColors.trueBlack,
-        title: const Text('My Bookings'),
-      ),
-      body: bookingsAsync.when(
+        appBar: AppBar(
+          backgroundColor: AppColors.trueBlack,
+          title: const Text('My Bookings'),
+          automaticallyImplyLeading: false,
+        ),
+        body: bookingsAsync.when(
         data: (response) {
           if (response.bookings.isEmpty) {
             return const EmptyState(
@@ -107,6 +118,7 @@ class MyBookingsScreen extends ConsumerWidget {
           message: error.toString(),
           onRetry: () => ref.invalidate(myBookingsProvider),
         ),
+      ),
       ),
     );
   }

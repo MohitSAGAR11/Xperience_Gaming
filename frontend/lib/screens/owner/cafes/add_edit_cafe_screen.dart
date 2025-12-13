@@ -11,6 +11,7 @@ import '../../../services/cafe_service.dart';
 import '../../../services/location_service.dart';
 import '../../../widgets/custom_button.dart';
 import '../../../widgets/input_field.dart';
+import '../../../widgets/image_gallery_manager.dart';
 
 /// Add/Edit Cafe Screen
 class AddEditCafeScreen extends ConsumerStatefulWidget {
@@ -38,6 +39,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
   double? _latitude;
   double? _longitude;
   String? _locationError;
+  List<String> _photos = [];
   bool get isEditing => widget.cafeId != null;
 
   // Operating Hours
@@ -75,6 +77,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
         _totalPcStationsController.text = cafe.totalPcStations.toString();
         _latitude = cafe.latitude;
         _longitude = cafe.longitude;
+        _photos = List.from(cafe.photos ?? []);
         
         // Load operating hours
         _openingTime = _parseTimeString(cafe.openingTime);
@@ -481,6 +484,22 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
               ),
               const SizedBox(height: 24),
 
+              // Photos Section (only show in edit mode)
+              if (isEditing && widget.cafeId != null) ...[
+                const _SectionHeader(title: 'Cafe Photos'),
+                const SizedBox(height: 12),
+                ImageGalleryManager(
+                  cafeId: widget.cafeId!,
+                  initialImages: _photos,
+                  onImagesChanged: (updatedImages) {
+                    setState(() {
+                      _photos = updatedImages;
+                    });
+                  },
+                ),
+                const SizedBox(height: 24),
+              ],
+
               // Save Button
               GlowButton(
                 text: isEditing ? 'UPDATE CAFE' : 'CREATE CAFE',
@@ -490,7 +509,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
               const SizedBox(height: 16),
               if (!isEditing)
                 const Text(
-                  'You can add games, PC specs, and photos after creating the cafe.',
+                  'You can add photos and more details after creating the cafe.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textMuted,

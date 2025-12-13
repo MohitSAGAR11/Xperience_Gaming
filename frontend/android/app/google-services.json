@@ -12,7 +12,20 @@
           "package_name": "com.example.xperience_gaming"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "180127542-ots371dsqn2k7ogcq39fjasonlkaa50d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.xperience_gaming",
+            "certificate_hash": "59920c0c612655aa9a6b4b1dbeb66d5862b5abc8"
+          }
+        },
+        {
+          "client_id": "180127542-8itp58lc8epvmv6iabicrabvmvepudk9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBUbS86rGV0rM1CxRcD3TAPik2nHYhaK0U"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "180127542-8itp58lc8epvmv6iabicrabvmvepudk9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

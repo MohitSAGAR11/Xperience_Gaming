@@ -9,6 +9,8 @@ const authRoutes = require('./src/routes/authRoutes');
 const cafeRoutes = require('./src/routes/cafeRoutes');
 const bookingRoutes = require('./src/routes/bookingRoutes');
 const reviewRoutes = require('./src/routes/reviewRoutes');
+const communityRoutes = require('./src/routes/communityRoutes');
+const uploadRoutes = require('./src/routes/uploadRoutes');
 
 // Initialize express app
 const app = express();
@@ -48,6 +50,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cafes', cafeRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/community', communityRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // 404 Handler
 app.use((req, res) => {
@@ -87,11 +91,13 @@ const startServer = async () => {
 ║   Environment: ${process.env.NODE_ENV || 'development'}                    ║
 ║                                                  ║
 ║   Endpoints:                                     ║
-    ║   • Auth:     /api/auth                          ║
-    ║   • Cafes:    /api/cafes                         ║
-    ║   • Bookings: /api/bookings                      ║
-    ║   • Reviews:  /api/reviews                       ║
-    ║   • Health:   /api/health                        ║
+    ║   • Auth:      /api/auth                         ║
+    ║   • Cafes:     /api/cafes                        ║
+    ║   • Bookings:  /api/bookings                     ║
+    ║   • Reviews:   /api/reviews                      ║
+    ║   • Community: /api/community                    ║
+    ║   • Upload:    /api/upload                       ║
+    ║   • Health:    /api/health                       ║
 ║                                                  ║
 ╚══════════════════════════════════════════════════╝
       `);

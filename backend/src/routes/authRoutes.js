@@ -5,7 +5,8 @@ const {
   logout,
   getMe,
   updateProfile,
-  changePassword
+  changePassword,
+  registerFcmToken
 } = require('../controllers/authController');
 const { protect, protectNewUser } = require('../middleware/authMiddleware');
 
@@ -40,6 +41,9 @@ router.get('/me', protect, getMe);
 router.post('/logout', protect, logout);
 router.put('/profile', protect, updateProfile);
 router.put('/password', protect, changePasswordValidation, changePassword);
+
+// FCM Token for push notifications
+router.post('/register-fcm-token', protect, registerFcmToken);
 
 module.exports = router;
 

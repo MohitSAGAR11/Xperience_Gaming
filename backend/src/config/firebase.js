@@ -5,8 +5,13 @@ const path = require('path');
 try {
   const serviceAccount = require('../../firebase-service-account.json');
   
+  // Get storage bucket from service account or use project ID
+  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 
+                        serviceAccount.project_id + '.appspot.com';
+  
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: storageBucket
   });
 
   const db = admin.firestore();
@@ -14,6 +19,7 @@ try {
 
   console.log('✅ Firebase Admin SDK initialized successfully');
   console.log('✅ Firestore connected');
+  console.log('✅ Storage bucket configured:', storageBucket);
 
   module.exports = { db, auth, admin };
 } catch (error) {

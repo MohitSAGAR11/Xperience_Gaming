@@ -8,12 +8,14 @@ import '../screens/auth/register_screen.dart';
 import '../screens/client/client_main_screen.dart';
 import '../screens/client/home/client_home_screen.dart';
 import '../screens/client/search/search_screen.dart';
+import '../screens/client/community/community_screen.dart';
 import '../screens/client/cafe/cafe_details_screen.dart';
 import '../screens/client/booking/slot_selection_screen.dart';
 import '../screens/client/booking/booking_confirmation_screen.dart';
 import '../screens/client/bookings/my_bookings_screen.dart';
 import '../screens/client/profile/client_profile_screen.dart';
 import '../screens/client/profile/edit_profile_screen.dart' as client;
+import '../screens/client/support/help_support_screen.dart';
 import '../screens/owner/owner_main_screen.dart';
 import '../screens/owner/dashboard/owner_dashboard_screen.dart';
 import '../screens/owner/cafes/my_cafes_screen.dart';
@@ -32,12 +34,14 @@ class Routes {
   // Client Routes
   static const String clientHome = '/client';
   static const String search = '/client/search';
+  static const String community = '/client/community';
   static const String cafeDetails = '/client/cafe/:id';
   static const String slotSelection = '/client/cafe/:id/book';
   static const String bookingConfirmation = '/client/booking/confirm';
   static const String myBookings = '/client/bookings';
   static const String clientProfile = '/client/profile';
   static const String editClientProfile = '/client/profile/edit';
+  static const String helpSupport = '/client/help-support';
   
   // Owner Routes
   static const String ownerDashboard = '/owner';
@@ -92,6 +96,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
           GoRoute(
+            path: Routes.community,
+            name: 'community',
+            builder: (context, state) => const CommunityScreen(),
+          ),
+          GoRoute(
             path: Routes.myBookings,
             name: 'myBookings',
             builder: (context, state) => const MyBookingsScreen(),
@@ -109,6 +118,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.editClientProfile,
         name: 'editClientProfile',
         builder: (context, state) => const client.EditProfileScreen(),
+      ),
+      GoRoute(
+        path: Routes.helpSupport,
+        name: 'helpSupport',
+        builder: (context, state) => const HelpSupportScreen(),
       ),
       GoRoute(
         path: Routes.cafeDetails,

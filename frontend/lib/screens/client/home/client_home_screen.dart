@@ -143,59 +143,6 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
                   ),
                 ),
 
-              // Quick Actions
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Quick Filters',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _QuickFilter(
-                              icon: Icons.computer,
-                              label: 'PC Gaming',
-                              onTap: () => context.go('${Routes.search}?type=pc'),
-                            ),
-                            _QuickFilter(
-                              icon: Icons.sports_esports,
-                              label: 'PS5',
-                              onTap: () => context.go('${Routes.search}?console=ps5'),
-                            ),
-                            _QuickFilter(
-                              icon: Icons.gamepad,
-                              label: 'Xbox',
-                              onTap: () => context.go('${Routes.search}?console=xbox'),
-                            ),
-                            _QuickFilter(
-                              icon: Icons.videogame_asset,
-                              label: 'Valorant',
-                              onTap: () => context.go('${Routes.search}?q=Valorant'),
-                            ),
-                            _QuickFilter(
-                              icon: Icons.gamepad_outlined,
-                              label: 'GTA V',
-                              onTap: () => context.go('${Routes.search}?q=GTA'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
               // Nearby Cafes Section
               SliverToBoxAdapter(
                 child: Padding(
@@ -286,49 +233,6 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Quick Filter Chip
-class _QuickFilter extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _QuickFilter({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceDark,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.cardDark),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: AppColors.cyberCyan),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-          ],
         ),
       ),
     );

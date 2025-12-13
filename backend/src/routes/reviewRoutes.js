@@ -9,7 +9,8 @@ const {
   deleteReview,
   getMyReviews,
   checkUserReview,
-  respondToReview
+  respondToReview,
+  debugGetAllReviews
 } = require('../controllers/reviewController');
 
 // Validation rules
@@ -55,6 +56,9 @@ const respondValidation = [
 
 // Public routes
 router.get('/cafe/:cafeId', getCafeReviews);
+
+// Debug route (temporary - for troubleshooting)
+router.get('/debug/all', debugGetAllReviews);
 
 // Protected routes (require login)
 router.use(protect);

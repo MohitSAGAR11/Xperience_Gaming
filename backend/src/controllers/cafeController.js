@@ -26,13 +26,13 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 const toRad = (deg) => deg * (Math.PI / 180);
 
 /**
- * Helper function to convert Firestore timestamp to Date
+ * Helper function to convert Firestore timestamp to ISO string
  */
 const convertTimestamp = (timestamp) => {
   if (!timestamp) return null;
-  if (timestamp.toDate) return timestamp.toDate();
-  if (timestamp instanceof Date) return timestamp;
-  return new Date(timestamp);
+  if (timestamp.toDate) return timestamp.toDate().toISOString();
+  if (timestamp instanceof Date) return timestamp.toISOString();
+  return timestamp;
 };
 
 /**
@@ -83,9 +83,12 @@ const createCafe = async (req, res) => {
 
     const docRef = await db.collection('cafes').add(cafeData);
     const cafeDoc = await docRef.get();
+    const cafeDocData = cafeDoc.data();
     const cafe = {
       id: cafeDoc.id,
-      ...cafeDoc.data()
+      ...cafeDocData,
+      createdAt: convertTimestamp(cafeDocData.createdAt),
+      updatedAt: convertTimestamp(cafeDocData.updatedAt)
     };
 
     console.log('📍 Cafe created, mapsLink saved:', cafe.mapsLink);
@@ -246,7 +249,9 @@ const getNearbyCafes = async (req, res) => {
 
     let cafes = snapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
+      ...doc.data(),
+      createdAt: convertTimestamp(doc.data().createdAt),
+      updatedAt: convertTimestamp(doc.data().updatedAt)
     }));
 
     // Filter by game if provided
