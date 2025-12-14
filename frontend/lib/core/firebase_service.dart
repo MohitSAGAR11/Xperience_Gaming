@@ -94,8 +94,10 @@ class FirebaseService {
       print('🔐 [GOOGLE] Starting Google Sign-In...');
       
       // Initialize Google Sign-In
+      // Use server client ID from google-services.json (client_type: 3)
       final GoogleSignIn googleSignIn = GoogleSignIn(
         scopes: ['email'],
+        serverClientId: '180127542-8itp58lc8epvmv6iabicrabvmvepudk9.apps.googleusercontent.com',
       );
       
       // Trigger the authentication flow

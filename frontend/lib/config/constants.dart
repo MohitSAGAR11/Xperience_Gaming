@@ -12,8 +12,8 @@ class ApiConstants {
   // 3. Update baseUrl below with YOUR IP
   // 4. Hot reload/restart app
   //
-  // Current IP: 10.10.4.50 (verify this is still correct!)
-  static const String baseUrl = 'http://10.10.4.50:5000/api';
+  // Current IP: 10.10.6.251 (updated automatically)
+  static const String baseUrl = 'http://10.10.6.251:5000/api';
   
   // Auth Endpoints
   // Note: register/login are handled by Firebase Auth, backend endpoints are:

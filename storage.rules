@@ -1,0 +1,66 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is owner
+    function isOwner() {
+      return isAuthenticated() && 
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'owner';
+    }
+    
+    // Cafe images - owners can upload, everyone can read
+    match /cafes/{cafeId}/{allPaths=**} {
+      // Allow public read access for cafe images
+      allow read: if true;
+      
+      // Allow write (upload/delete) only for authenticated owners
+      allow write: if isAuthenticated() && 
+                      (request.resource.size < 5 * 1024 * 1024) && // 5MB limit
+                      (request.resource.contentType.matches('image/.*')) &&
+                      firestore.exists(/databases/(default)/documents/cafes/$(cafeId)) &&
+                      firestore.get(/databases/(default)/documents/cafes/$(cafeId)).data.ownerId == request.auth.uid;
+      
+      // Allow delete only for owners
+      allow delete: if isAuthenticated() &&
+                      firestore.exists(/databases/(default)/documents/cafes/$(cafeId)) &&
+                      firestore.get(/databases/(default)/documents/cafes/$(cafeId)).data.ownerId == request.auth.uid;
+    }
+    
+    // User profile images
+    match /users/{userId}/{allPaths=**} {
+      // Allow read for authenticated users
+      allow read: if isAuthenticated();
+      
+      // Allow write only for the user themselves
+      allow write: if isAuthenticated() && 
+                      request.auth.uid == userId &&
+                      (request.resource.size < 5 * 1024 * 1024) && // 5MB limit
+                      (request.resource.contentType.matches('image/.*'));
+      
+      // Allow delete only for the user themselves
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Community posts images
+    match /community/{postId}/{allPaths=**} {
+      // Allow public read
+      allow read: if true;
+      
+      // Allow write for authenticated users
+      allow write: if isAuthenticated() &&
+                      (request.resource.size < 5 * 1024 * 1024) && // 5MB limit
+                      (request.resource.contentType.matches('image/.*'));
+      
+      // Allow delete for post owner
+      allow delete: if isAuthenticated() &&
+                      firestore.exists(/databases/(default)/documents/community/$(postId)) &&
+                      firestore.get(/databases/(default)/documents/community/$(postId)).data.userId == request.auth.uid;
+    }
+  }
+}
+

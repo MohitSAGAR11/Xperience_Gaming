@@ -86,14 +86,14 @@ class NotificationService {
 
   /// Initialize local notifications
   Future<void> _initializeLocalNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
+    final androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    final iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
 
-    const initSettings = InitializationSettings(
+    final initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
@@ -105,7 +105,7 @@ class NotificationService {
 
     // Create Android notification channel
     if (Platform.isAndroid) {
-      const channel = AndroidNotificationChannel(
+      final channel = AndroidNotificationChannel(
         'booking_notifications',
         'Booking Notifications',
         description: 'Notifications for new bookings and updates',
@@ -165,7 +165,7 @@ class NotificationService {
 
     print('📬 Showing local notification: ${notification.title}');
 
-    const androidDetails = AndroidNotificationDetails(
+    final androidDetails = AndroidNotificationDetails(
       'booking_notifications',
       'Booking Notifications',
       channelDescription: 'Notifications for new bookings and updates',
@@ -176,13 +176,13 @@ class NotificationService {
       playSound: true,
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -272,7 +272,7 @@ class NotificationService {
   Future<void> showTestNotification() async {
     print('📬 Showing test notification');
     
-    const androidDetails = AndroidNotificationDetails(
+    final androidDetails = AndroidNotificationDetails(
       'booking_notifications',
       'Booking Notifications',
       channelDescription: 'Notifications for new bookings and updates',
@@ -280,13 +280,13 @@ class NotificationService {
       priority: Priority.high,
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );

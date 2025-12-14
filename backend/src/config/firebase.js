@@ -5,9 +5,10 @@ const path = require('path');
 try {
   const serviceAccount = require('../../firebase-service-account.json');
   
-  // Get storage bucket from service account or use project ID
+  // Get storage bucket from environment variable or use default
+  // Default bucket name matches frontend configuration
   const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 
-                        serviceAccount.project_id + '.appspot.com';
+                       'xperience-gaming.firebasestorage.app';
   
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
