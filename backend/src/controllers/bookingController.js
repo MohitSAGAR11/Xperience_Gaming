@@ -1,6 +1,7 @@
 const { db } = require('../config/firebase');
 const { validationResult } = require('express-validator');
 const { createCommunityPost, deleteCommunityPost } = require('./communityController');
+const notificationService = require('../services/notificationService');
 
 /**
  * Convert time string to minutes since midnight for accurate comparison
@@ -446,6 +447,19 @@ const createBooking = async (req, res) => {
       } catch (communityError) {
         // Don't fail booking if community post fails
         console.error('🌐 Failed to create community post:', communityError);
+      }
+
+      // Send notification to cafe owner
+      try {
+        await notificationService.sendBookingNotification(
+          booking,
+          cafeData,
+          userData
+        );
+        console.log('📬 Notification sent to cafe owner');
+      } catch (notificationError) {
+        // Don't fail booking if notification fails
+        console.error('📬 Failed to send notification:', notificationError);
       }
 
       res.status(201).json({

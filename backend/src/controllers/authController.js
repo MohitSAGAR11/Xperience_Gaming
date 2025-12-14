@@ -272,12 +272,98 @@ const registerFcmToken = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Handle Google Sign-In
+ * @route   POST /api/auth/google-signin
+ * @access  Private (requires Firebase token from Google Sign-In)
+ */
+const googleSignIn = async (req, res) => {
+  try {
+    console.log('🔐 [GOOGLE_SIGNIN] Request received');
+    console.log('🔐 [GOOGLE_SIGNIN] User ID:', req.user.id);
+    console.log('🔐 [GOOGLE_SIGNIN] User Email:', req.user.email);
+    console.log('🔐 [GOOGLE_SIGNIN] Request Body:', req.body);
+
+    const { role, isNewUser, name, email } = req.body;
+    const userId = req.user.id;
+
+    // Validate role
+    if (!role || !['client', 'owner'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be "client" or "owner"'
+      });
+    }
+
+    // Check if user profile exists
+    console.log('🔐 [GOOGLE_SIGNIN] Checking if profile exists...');
+    const userDoc = await db.collection('users').doc(userId).get();
+
+    if (userDoc.exists) {
+      // Existing user - return their profile
+      console.log('🔐 [GOOGLE_SIGNIN] Existing user found');
+      const userData = userDoc.data();
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Welcome back!',
+        data: {
+          user: {
+            id: userId,
+            ...userData,
+            createdAt: userData.createdAt?.toDate ? userData.createdAt.toDate().toISOString() : userData.createdAt,
+            updatedAt: userData.updatedAt?.toDate ? userData.updatedAt.toDate().toISOString() : userData.updatedAt
+          }
+        }
+      });
+    } else {
+      // New user - create profile
+      console.log('🔐 [GOOGLE_SIGNIN] New user, creating profile...');
+      
+      const userData = {
+        name: name || 'User',
+        email: email || req.user.email,
+        role: role,
+        phone: null,
+        avatar: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await db.collection('users').doc(userId).set(userData);
+      console.log('🔐 [GOOGLE_SIGNIN] Profile created successfully');
+
+      return res.status(201).json({
+        success: true,
+        message: 'Account created successfully',
+        data: {
+          user: {
+            id: userId,
+            ...userData,
+            createdAt: userData.createdAt.toISOString(),
+            updatedAt: userData.updatedAt.toISOString()
+          }
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('🔐 [GOOGLE_SIGNIN] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during Google Sign-In',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createProfile,
   logout,
   getMe,
   updateProfile,
   changePassword,
-  registerFcmToken
+  registerFcmToken,
+  googleSignIn
 };
 

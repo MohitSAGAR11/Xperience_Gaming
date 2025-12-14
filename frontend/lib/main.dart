@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import 'config/theme.dart';
 import 'config/routes.dart';
 import 'core/storage.dart';
 import 'core/firebase_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -14,6 +17,9 @@ void main() async {
 
   // Initialize Firebase
   await FirebaseService.initialize();
+  
+  // Set background message handler (defined in notification_service.dart)
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([

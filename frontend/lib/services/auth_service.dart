@@ -295,10 +295,96 @@ class AuthService {
     }
   }
 
+  /// Sign in with Google
+  Future<app_models.AuthResponse> signInWithGoogle({
+    required String role, // 'client' or 'owner'
+  }) async {
+    try {
+      print('🔐 [GOOGLE_SIGNIN] Starting Google Sign-In with role: $role');
+      
+      // Sign in with Google (handled by FirebaseService)
+      final userCredential = await FirebaseService.signInWithGoogle();
+      
+      if (userCredential == null) {
+        return app_models.AuthResponse(
+          success: false,
+          message: 'Google Sign-In was cancelled',
+        );
+      }
+      
+      final firebaseUser = userCredential.user;
+      if (firebaseUser == null) {
+        return app_models.AuthResponse(
+          success: false,
+          message: 'Failed to sign in with Google',
+        );
+      }
+      
+      print('🔐 [GOOGLE_SIGNIN] Firebase user created: ${firebaseUser.uid}');
+      print('🔐 [GOOGLE_SIGNIN] Email: ${firebaseUser.email}');
+      print('🔐 [GOOGLE_SIGNIN] Display Name: ${firebaseUser.displayName}');
+      
+      // Check if this is a new user or existing user
+      final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
+      print('🔐 [GOOGLE_SIGNIN] Is new user: $isNewUser');
+      
+      // Wait for token to settle
+      await Future.delayed(const Duration(milliseconds: 500));
+      await FirebaseService.refreshToken();
+      
+      // Send Google Sign-In data to backend
+      print('🔐 [GOOGLE_SIGNIN] Sending to backend...');
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/auth/google-signin',
+        data: {
+          'role': role,
+          'isNewUser': isNewUser,
+          'name': firebaseUser.displayName,
+          'email': firebaseUser.email,
+        },
+      );
+      
+      print('🔐 [GOOGLE_SIGNIN] Backend response: ${response.isSuccess}');
+      
+      if (response.isSuccess && response.data != null) {
+        final data = response.data!;
+        if (data['data'] != null && data['data']['user'] != null) {
+          print('🔐 [GOOGLE_SIGNIN] Success! User role: ${data['data']['user']['role']}');
+          return app_models.AuthResponse(
+            success: true,
+            message: data['message'] ?? 'Sign in successful',
+            user: app_models.User.fromJson(data['data']['user']),
+          );
+        }
+      }
+      
+      // Backend failed, sign out
+      print('🔐 [GOOGLE_SIGNIN] Backend failed, signing out');
+      await FirebaseService.signOut();
+      
+      return app_models.AuthResponse(
+        success: false,
+        message: response.message ?? 'Failed to complete sign in',
+      );
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      print('🔐 [GOOGLE_SIGNIN] Firebase Auth ERROR: ${e.code} - ${e.message}');
+      return app_models.AuthResponse(
+        success: false,
+        message: 'Google Sign-In failed: ${e.message ?? e.code}',
+      );
+    } catch (e) {
+      print('🔐 [GOOGLE_SIGNIN] UNEXPECTED ERROR: $e');
+      return app_models.AuthResponse(
+        success: false,
+        message: e.toString(),
+      );
+    }
+  }
+
   /// Logout user from Firebase Auth
   Future<bool> logout() async {
     try {
-      await _auth.signOut();
+      await FirebaseService.signOut(); // This handles both Firebase and Google sign-out
       return true;
     } catch (e) {
       return false;

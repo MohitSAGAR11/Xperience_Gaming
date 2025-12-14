@@ -25,6 +25,7 @@ dependencies:
   firebase_core: ^3.0.0
   firebase_auth: ^5.0.0
   cloud_firestore: ^5.0.0
+  google_sign_in: ^6.2.1
   
   # Local Storage
   flutter_secure_storage: ^9.0.0

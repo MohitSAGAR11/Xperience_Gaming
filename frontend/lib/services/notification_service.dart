@@ -1,6 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:io' show Platform;
 
 import '../core/api_client.dart';
@@ -9,6 +10,7 @@ import '../config/constants.dart';
 /// Background message handler (must be top-level function)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
   print('📬 Background message received: ${message.messageId}');
   print('📬 Title: ${message.notification?.title}');
   print('📬 Body: ${message.notification?.body}');

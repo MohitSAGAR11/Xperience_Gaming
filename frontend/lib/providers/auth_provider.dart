@@ -5,6 +5,7 @@ import '../core/storage.dart';
 import '../core/firebase_service.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 
 
 /// Auth State
@@ -45,11 +46,12 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final StorageService _storage;
+  final Ref _ref;
   
   // Flag to prevent listener from interfering during registration
   bool _isRegistering = false;
 
-  AuthNotifier(this._authService, this._storage) : super(AuthState());
+  AuthNotifier(this._authService, this._storage, this._ref) : super(AuthState());
 
   /// Initialize auth state (check Firebase Auth)
   Future<void> initialize() async {
@@ -102,6 +104,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
             isAuthenticated: true,
             isLoading: false,
           );
+          
+          // Initialize notifications after successful authentication
+          _initializeNotifications();
         } else {
           // Profile not found - user exists in Firebase but not in our DB
           // Sign them out to allow fresh registration
@@ -195,6 +200,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isAuthenticated: true,
           isLoading: false,
         );
+        
+        // Initialize notifications after successful login
+        _initializeNotifications();
+        
         return true;
       } else {
         state = state.copyWith(
@@ -217,6 +226,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true);
 
     try {
+      // Unregister notification token before logout
+      try {
+        final notificationService = _ref.read(notificationServiceProvider);
+        await notificationService.unregisterToken();
+        print('📬 [AUTH] Notification token unregistered');
+      } catch (e) {
+        print('📬 [AUTH] Error unregistering notification token: $e');
+        // Don't fail logout if notification unregister fails
+      }
+      
       await _authService.logout();
     } catch (_) {
       // Ignore errors during logout
@@ -265,6 +284,64 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Sign in with Google
+  Future<bool> signInWithGoogle({
+    required String role,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    
+    // Set flag to prevent auth listener from interfering
+    _isRegistering = true;
+
+    try {
+      final response = await _authService.signInWithGoogle(role: role);
+
+      if (response.success && response.user != null) {
+        await _storage.saveUser(response.user!);
+        await _storage.saveRole(response.user!.role);
+
+        state = AuthState(
+          user: response.user,
+          isAuthenticated: true,
+          isLoading: false,
+        );
+        
+        // Initialize notifications after successful Google sign-in
+        _initializeNotifications();
+        
+        _isRegistering = false;
+        return true;
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          error: response.message,
+        );
+        _isRegistering = false;
+        return false;
+      }
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+      _isRegistering = false;
+      return false;
+    }
+  }
+
+  /// Initialize notifications (called after successful authentication)
+  Future<void> _initializeNotifications() async {
+    try {
+      print('📬 [AUTH] Initializing notifications...');
+      final notificationService = _ref.read(notificationServiceProvider);
+      await notificationService.initialize();
+      print('📬 [AUTH] Notifications initialized successfully');
+    } catch (e) {
+      print('📬 [AUTH] Error initializing notifications: $e');
+      // Don't fail authentication if notifications fail
+    }
+  }
+
   /// Clear error
   void clearError() {
     state = state.copyWith(error: null);
@@ -275,7 +352,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final authService = ref.watch(authServiceProvider);
   final storage = ref.watch(storageServiceProvider);
-  return AuthNotifier(authService, storage);
+  return AuthNotifier(authService, storage, ref);
 });
 
 /// Is Authenticated Provider

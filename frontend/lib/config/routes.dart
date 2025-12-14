@@ -3,8 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../screens/splash/splash_screen.dart';
-import '../screens/auth/login_screen.dart';
-import '../screens/auth/register_screen.dart';
+import '../screens/auth/auth_screen.dart';
 import '../screens/client/client_main_screen.dart';
 import '../screens/client/home/client_home_screen.dart';
 import '../screens/client/search/search_screen.dart';
@@ -28,8 +27,7 @@ import '../screens/owner/profile/edit_profile_screen.dart' as owner;
 class Routes {
   // Auth Routes
   static const String splash = '/';
-  static const String login = '/login';
-  static const String register = '/register';
+  static const String auth = '/auth'; // Single auth screen for Google Sign-In
   
   // Client Routes
   static const String clientHome = '/client';
@@ -66,16 +64,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SplashScreen(),
       ),
       
-      // Auth Routes
+      // Auth Route - Single screen for Google Sign-In
       GoRoute(
-        path: Routes.login,
-        name: 'login',
-        builder: (context, state) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: Routes.register,
-        name: 'register',
-        builder: (context, state) => const RegisterScreen(),
+        path: Routes.auth,
+        name: 'auth',
+        builder: (context, state) => const AuthScreen(),
       ),
       
       // Client Shell Route (with bottom navigation)

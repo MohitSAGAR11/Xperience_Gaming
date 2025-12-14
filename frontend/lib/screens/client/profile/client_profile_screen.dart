@@ -100,7 +100,7 @@ class ClientProfileScreen extends ConsumerWidget {
               onPressed: () async {
                 await ref.read(authProvider.notifier).logout();
                 if (context.mounted) {
-                  context.go(Routes.login);
+                  context.go(Routes.auth);
                 }
               },
             ),

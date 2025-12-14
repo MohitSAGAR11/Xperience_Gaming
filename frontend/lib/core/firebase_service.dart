@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../firebase_options.dart';
 
 /// Firebase Service - Initialization and helpers
@@ -84,6 +85,72 @@ class FirebaseService {
     if (user != null) {
       await user.getIdToken(true);
       print('🔐 [FIREBASE] Token refreshed for user: ${user.uid}');
+    }
+  }
+  
+  /// Sign in with Google
+  static Future<UserCredential?> signInWithGoogle() async {
+    try {
+      print('🔐 [GOOGLE] Starting Google Sign-In...');
+      
+      // Initialize Google Sign-In
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email'],
+      );
+      
+      // Trigger the authentication flow
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        // User canceled the sign-in
+        print('🔐 [GOOGLE] User canceled sign-in');
+        return null;
+      }
+      
+      print('🔐 [GOOGLE] Google user signed in: ${googleUser.email}');
+      
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      
+      print('🔐 [GOOGLE] Got Google auth tokens');
+      
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      
+      print('🔐 [GOOGLE] Created Firebase credential');
+      
+      // Sign in to Firebase with the Google credential
+      final userCredential = await auth.signInWithCredential(credential);
+      
+      print('🔐 [GOOGLE] Successfully signed in to Firebase');
+      print('🔐 [GOOGLE] User ID: ${userCredential.user?.uid}');
+      print('🔐 [GOOGLE] Email: ${userCredential.user?.email}');
+      print('🔐 [GOOGLE] Display Name: ${userCredential.user?.displayName}');
+      
+      return userCredential;
+    } catch (e) {
+      print('🔐 [GOOGLE] Error during Google Sign-In: $e');
+      rethrow;
+    }
+  }
+  
+  /// Sign out from both Firebase and Google
+  static Future<void> signOut() async {
+    try {
+      // Sign out from Google
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      await googleSignIn.signOut();
+      print('🔐 [GOOGLE] Signed out from Google');
+      
+      // Sign out from Firebase
+      await auth.signOut();
+      print('🔐 [FIREBASE] Signed out from Firebase');
+    } catch (e) {
+      print('🔐 [FIREBASE] Error during sign out: $e');
+      rethrow;
     }
   }
 }

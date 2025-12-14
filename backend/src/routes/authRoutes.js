@@ -6,7 +6,8 @@ const {
   getMe,
   updateProfile,
   changePassword,
-  registerFcmToken
+  registerFcmToken,
+  googleSignIn
 } = require('../controllers/authController');
 const { protect, protectNewUser } = require('../middleware/authMiddleware');
 
@@ -37,6 +38,11 @@ const changePasswordValidation = [
 // This endpoint creates the user profile in Firestore after Firebase Auth registration
 // Uses protectNewUser since the user doesn't exist in Firestore yet
 router.post('/create-profile', protectNewUser, createProfileValidation, createProfile);
+
+// Google Sign-In - handles both new and existing users
+// Uses protectNewUser because new users won't exist in Firestore yet
+router.post('/google-signin', protectNewUser, googleSignIn);
+
 router.get('/me', protect, getMe);
 router.post('/logout', protect, logout);
 router.put('/profile', protect, updateProfile);
