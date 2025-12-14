@@ -38,7 +38,7 @@ class CafeDetailsScreen extends ConsumerWidget {
 
           return CustomScrollView(
             slivers: [
-              // Image Header
+              // Image Header with Swipable Gallery
               SliverAppBar(
                 expandedHeight: 250,
                 pinned: true,
@@ -48,41 +48,9 @@ class CafeDetailsScreen extends ConsumerWidget {
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Hero(
-                        tag: 'cafe_image_${cafe.id}',
-                        child: CachedNetworkImage(
-                          imageUrl: cafe.primaryPhoto,
-                          fit: BoxFit.cover,
-                          memCacheHeight: 500,
-                          memCacheWidth: 1000,
-                          maxHeightDiskCache: 500,
-                          maxWidthDiskCache: 1000,
-                          placeholder: (context, url) => Container(
-                            color: AppColors.surfaceDark,
-                          ),
-                          errorWidget: (context, url, error) => Container(
-                            color: AppColors.surfaceDark,
-                            child: const Icon(Icons.image, size: 64),
-                          ),
-                        ),
-                      ),
-                      // Gradient overlay
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              AppColors.trueBlack.withOpacity(0.8),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                  background: _CafeImageCarousel(
+                    cafeId: cafe.id,
+                    photos: cafe.photos,
                   ),
                 ),
               ),
@@ -395,6 +363,156 @@ class CafeDetailsScreen extends ConsumerWidget {
                 ),
               )
             : null,
+      ),
+    );
+  }
+}
+
+/// Swipable Image Carousel for Cafe Photos
+class _CafeImageCarousel extends StatefulWidget {
+  final String cafeId;
+  final List<String> photos;
+
+  const _CafeImageCarousel({
+    required this.cafeId,
+    required this.photos,
+  });
+
+  @override
+  State<_CafeImageCarousel> createState() => _CafeImageCarouselState();
+}
+
+class _CafeImageCarouselState extends State<_CafeImageCarousel> {
+  late PageController _pageController;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+    _currentPage = 0;
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = widget.photos.isNotEmpty
+        ? widget.photos
+        : ['https://via.placeholder.com/400x200'];
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // PageView for swipable images
+        PageView.builder(
+          controller: _pageController,
+          onPageChanged: (index) {
+            setState(() {
+              _currentPage = index;
+            });
+          },
+          itemCount: images.length,
+          itemBuilder: (context, index) {
+            return Hero(
+              tag: 'cafe_image_${widget.cafeId}_$index',
+              child: CachedNetworkImage(
+                imageUrl: images[index],
+                fit: BoxFit.cover,
+                memCacheHeight: 500,
+                memCacheWidth: 1000,
+                maxHeightDiskCache: 500,
+                maxWidthDiskCache: 1000,
+                placeholder: (context, url) => Container(
+                  color: AppColors.surfaceDark,
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.neonPurple,
+                    ),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: AppColors.surfaceDark,
+                  child: const Icon(Icons.image, size: 64, color: AppColors.textMuted),
+                ),
+              ),
+            );
+          },
+        ),
+        // Gradient overlay
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                AppColors.trueBlack.withOpacity(0.8),
+              ],
+            ),
+          ),
+        ),
+        // Page indicators (dots)
+        if (images.length > 1)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                images.length,
+                (index) => _PageIndicator(
+                  isActive: index == _currentPage,
+                ),
+              ),
+            ),
+          ),
+        // Image counter (e.g., "1 / 5")
+        if (images.length > 1)
+          Positioned(
+            top: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.trueBlack.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_currentPage + 1} / ${images.length}',
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Page Indicator Dot
+class _PageIndicator extends StatelessWidget {
+  final bool isActive;
+
+  const _PageIndicator({required this.isActive});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      width: isActive ? 24 : 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: isActive ? AppColors.neonPurple : AppColors.textMuted.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(4),
       ),
     );
   }

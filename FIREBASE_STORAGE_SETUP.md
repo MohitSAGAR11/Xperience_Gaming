@@ -259,7 +259,7 @@ firebase deploy --only storage
 
 **Current Rules Summary:**
 - ✅ Cafe images: Public read, owner-only write
-- ✅ File size limit: 5MB
+- ✅ File size limit: 10MB
 - ✅ File type: Images only (image/*)
 - ✅ Ownership verification via Firestore
 
@@ -307,7 +307,7 @@ firebase deploy --only storage
 
 ### Issue: "File too large"
 **Solution:**
-- Current limit is 5MB
+- Current limit is 10MB
 - Compress images before upload
 - Or increase limit in `uploadController.js` and Storage rules
 

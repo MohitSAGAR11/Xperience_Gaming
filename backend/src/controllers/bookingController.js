@@ -127,9 +127,10 @@ const getMaxStations = (cafe, stationType, consoleType) => {
  * @param {string} startTime - Requested start time
  * @param {string} endTime - Requested end time
  * @param {number} maxStations - Total stations available
+ * @param {Object|null} transaction - Firestore transaction object (for atomic reads)
  * @returns {Array<number>} Array of available station numbers
  */
-const getAvailableStations = async (cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations) => {
+const getAvailableStations = async (cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations, transaction = null) => {
   const reqStartMins = timeToMinutes(startTime);
   let reqEndMins = timeToMinutes(endTime);
   
@@ -150,7 +151,12 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
     query = query.where('consoleType', '==', consoleType);
   }
 
-  const snapshot = await query.get();
+  // Use transaction.get() if transaction is provided for atomic reads
+  // This ensures we read a consistent snapshot and prevents race conditions
+  const snapshot = transaction 
+    ? await transaction.get(query)
+    : await query.get();
+    
   const existingBookings = snapshot.docs
     .map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(b => ['pending', 'confirmed'].includes(b.status));
@@ -382,9 +388,10 @@ const createBooking = async (req, res) => {
     
     try {
       await db.runTransaction(async (transaction) => {
-        // Re-check for conflicts inside transaction
+        // Re-check for conflicts inside transaction using transaction.get() for atomic reads
+        // This ensures we read a consistent snapshot and prevents double-booking
         const availableStations = await getAvailableStations(
-          cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations
+          cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations, transaction
         );
 
         if (!availableStations.includes(stationNumber)) {
