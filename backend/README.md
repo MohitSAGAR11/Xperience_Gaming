@@ -1,6 +1,6 @@
 # 🎮 Gaming Cafe Backend API
 
-A robust Node.js/Express backend for a Gaming Cafe discovery and booking platform. Built with PostgreSQL and Sequelize ORM.
+A robust Node.js/Express backend for a Gaming Cafe discovery and booking platform. Built with Firebase Firestore (NoSQL) and Firebase Admin SDK.
 
 ## ✨ Features
 
@@ -44,7 +44,7 @@ backend/
 ### Prerequisites
 
 - Node.js v18+
-- PostgreSQL 14+
+- Firebase project with Firestore enabled
 
 ### Installation
 
@@ -61,13 +61,15 @@ backend/
 3. **Set up environment variables**
    ```bash
    cp .env.example .env
-   # Edit .env with your database credentials
+   # Edit .env with your Firebase credentials
    ```
 
-4. **Create PostgreSQL database**
-   ```sql
-   CREATE DATABASE gaming_cafe_db;
-   ```
+4. **Firebase Setup**
+   - Create a Firebase project at [Firebase Console](https://console.firebase.google.com)
+   - Enable **Firestore Database** and **Firebase Authentication**
+   - Enable **Firebase Storage** for image uploads
+   - Download `firebase-service-account.json` from Project Settings → Service Accounts
+   - Place the JSON file in the `backend/` directory
 
 5. **Start the server**
    ```bash
@@ -258,9 +260,10 @@ POST /api/cafes
 
 - **Runtime**: Node.js
 - **Framework**: Express.js
-- **Database**: PostgreSQL
-- **ORM**: Sequelize
-- **Auth**: JWT + bcryptjs
+- **Database**: Firebase Firestore (NoSQL)
+- **Cloud Services**: Firebase Admin SDK
+- **Auth**: Firebase Auth + JWT + bcryptjs
+- **File Upload**: Multer + Firebase Storage
 - **Validation**: express-validator
 
 ## 📝 Environment Variables
@@ -269,11 +272,8 @@ POST /api/cafes
 |----------|-------------|---------|
 | `PORT` | Server port | 5000 |
 | `NODE_ENV` | Environment | development |
-| `DB_HOST` | Database host | localhost |
-| `DB_PORT` | Database port | 5432 |
-| `DB_NAME` | Database name | gaming_cafe_db |
-| `DB_USER` | Database user | postgres |
-| `DB_PASSWORD` | Database password | - |
+| `FIREBASE_SERVICE_ACCOUNT` | Path to Firebase service account JSON | ./firebase-service-account.json |
+| `FIREBASE_STORAGE_BUCKET` | Firebase Storage bucket name | - |
 | `JWT_SECRET` | JWT signing secret | - |
 | `JWT_EXPIRES_IN` | Token expiry | 7d |
 | `CORS_ORIGIN` | Allowed origins | * |
