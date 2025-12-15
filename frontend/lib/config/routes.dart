@@ -22,6 +22,7 @@ import '../screens/owner/cafes/add_edit_cafe_screen.dart';
 import '../screens/owner/bookings/cafe_bookings_screen.dart';
 import '../screens/owner/profile/owner_profile_screen.dart';
 import '../screens/owner/profile/edit_profile_screen.dart' as owner;
+import '../screens/owner/earnings/earnings_analytics_screen.dart';
 
 /// Route Names
 class Routes {
@@ -49,6 +50,7 @@ class Routes {
   static const String cafeBookings = '/owner/cafes/:id/bookings';
   static const String ownerProfile = '/owner/profile';
   static const String editOwnerProfile = '/owner/profile/edit';
+  static const String earningsAnalytics = '/owner/earnings-analytics';
 }
 
 /// Router Configuration
@@ -190,6 +192,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           final cafeId = state.pathParameters['id']!;
           return CafeBookingsScreen(cafeId: cafeId);
         },
+      ),
+      GoRoute(
+        path: Routes.earningsAnalytics,
+        name: 'earningsAnalytics',
+        builder: (context, state) => const EarningsAnalyticsScreen(),
       ),
     ],
     

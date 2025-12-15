@@ -104,6 +104,7 @@ class OwnerDashboardScreen extends ConsumerWidget {
                                     cafes.length)
                                 .toStringAsFixed(1),
                         color: AppColors.warning,
+                        isHorizontal: true,
                       ),
                     ],
                   ),
@@ -288,12 +289,14 @@ class _StatCard extends StatelessWidget {
   final String title;
   final String value;
   final Color color;
+  final bool isHorizontal;
 
   const _StatCard({
     required this.icon,
     required this.title,
     required this.value,
     required this.color,
+    this.isHorizontal = false,
   });
 
   @override
@@ -305,35 +308,72 @@ class _StatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
+      child: isHorizontal
+          ? Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        value,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

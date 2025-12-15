@@ -411,6 +411,7 @@ class _CafeImageCarouselState extends State<_CafeImageCarousel> {
         // PageView for swipable images
         PageView.builder(
           controller: _pageController,
+          physics: const PageScrollPhysics(),
           onPageChanged: (index) {
             setState(() {
               _currentPage = index;
@@ -418,82 +419,229 @@ class _CafeImageCarouselState extends State<_CafeImageCarousel> {
           },
           itemCount: images.length,
           itemBuilder: (context, index) {
-            return Hero(
-              tag: 'cafe_image_${widget.cafeId}_$index',
-              child: CachedNetworkImage(
-                imageUrl: images[index],
-                fit: BoxFit.cover,
-                memCacheHeight: 500,
-                memCacheWidth: 1000,
-                maxHeightDiskCache: 500,
-                maxWidthDiskCache: 1000,
-                placeholder: (context, url) => Container(
-                  color: AppColors.surfaceDark,
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.neonPurple,
+            return GestureDetector(
+              onTap: () => _showFullScreenImage(context, images, index),
+              child: Hero(
+                tag: 'cafe_image_${widget.cafeId}_$index',
+                child: CachedNetworkImage(
+                  imageUrl: images[index],
+                  fit: BoxFit.cover,
+                  // Remove cache limits for better resolution in carousel
+                  placeholder: (context, url) => Container(
+                    color: AppColors.surfaceDark,
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.neonPurple,
+                      ),
                     ),
                   ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  color: AppColors.surfaceDark,
-                  child: const Icon(Icons.image, size: 64, color: AppColors.textMuted),
+                  errorWidget: (context, url, error) => Container(
+                    color: AppColors.surfaceDark,
+                    child: const Icon(Icons.image, size: 64, color: AppColors.textMuted),
+                  ),
                 ),
               ),
             );
           },
         ),
-        // Gradient overlay
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                AppColors.trueBlack.withOpacity(0.8),
-              ],
-            ),
-          ),
-        ),
-        // Page indicators (dots)
+        // Page indicators (dots) - ignore pointer events so gestures pass through
         if (images.length > 1)
-          Positioned(
-            bottom: 16,
-            left: 0,
-            right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                images.length,
-                (index) => _PageIndicator(
-                  isActive: index == _currentPage,
+          IgnorePointer(
+            child: Positioned(
+              bottom: 20,
+              left: 0,
+              right: 0,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    images.length,
+                    (index) => _PageIndicator(
+                      isActive: index == _currentPage,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        // Image counter (e.g., "1 / 5")
+        // Image counter (e.g., "1 / 5") - ignore pointer events so gestures pass through
         if (images.length > 1)
-          Positioned(
-            top: 16,
-            right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.trueBlack.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${_currentPage + 1} / ${images.length}',
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+          IgnorePointer(
+            child: Positioned(
+              top: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.trueBlack.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_currentPage + 1} / ${images.length}',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
           ),
       ],
+    );
+  }
+
+  void _showFullScreenImage(BuildContext context, List<String> images, int initialIndex) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _FullScreenImageViewer(
+          images: images,
+          initialIndex: initialIndex,
+          cafeId: widget.cafeId,
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+  }
+}
+
+/// Full Screen Image Viewer
+class _FullScreenImageViewer extends StatefulWidget {
+  final List<String> images;
+  final int initialIndex;
+  final String cafeId;
+
+  const _FullScreenImageViewer({
+    required this.images,
+    required this.initialIndex,
+    required this.cafeId,
+  });
+
+  @override
+  State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
+}
+
+class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.trueBlack,
+      body: Stack(
+        children: [
+          // Full screen image viewer with PageView
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            itemCount: widget.images.length,
+            itemBuilder: (context, index) {
+              return InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Center(
+                  child: Hero(
+                    tag: 'cafe_image_${widget.cafeId}_$index',
+                    child: CachedNetworkImage(
+                      imageUrl: widget.images[index],
+                      fit: BoxFit.contain,
+                      // Full resolution - no cache limits
+                      placeholder: (context, url) => Container(
+                        color: AppColors.surfaceDark,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.neonPurple,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: AppColors.surfaceDark,
+                        child: const Icon(
+                          Icons.image,
+                          size: 64,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          // Close button
+          SafeArea(
+            child: Positioned(
+              top: 16,
+              right: 16,
+              child: Material(
+                color: AppColors.trueBlack.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(24),
+                child: InkWell(
+                  onTap: () => Navigator.of(context).pop(),
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: AppColors.textPrimary,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Image counter at bottom
+          if (widget.images.length > 1)
+            SafeArea(
+              child: Positioned(
+                bottom: 16,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.trueBlack.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_currentIndex + 1} / ${widget.images.length}',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -83,23 +83,12 @@ class OwnerProfileScreen extends ConsumerWidget {
             _ProfileMenuItem(
               icon: Icons.analytics_outlined,
               title: 'Analytics',
-              onTap: () {
-                // TODO: Navigate to analytics
-              },
+              onTap: () => context.push(Routes.earningsAnalytics),
             ),
             _ProfileMenuItem(
               icon: Icons.account_balance_wallet_outlined,
               title: 'Earnings',
-              onTap: () {
-                // TODO: Navigate to earnings
-              },
-            ),
-            _ProfileMenuItem(
-              icon: Icons.settings_outlined,
-              title: 'Settings',
-              onTap: () {
-                // TODO: Navigate to settings
-              },
+              onTap: () => context.push(Routes.earningsAnalytics),
             ),
             _ProfileMenuItem(
               icon: Icons.help_outline,
