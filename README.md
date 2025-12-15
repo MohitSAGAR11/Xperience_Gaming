@@ -375,7 +375,7 @@ cd frontend
 ## 📱 Supported Platforms
 
 - ✅ **Android** (API 21+)
-- ✅ **iOS** (iOS 12+)
+- ❌ **iOS** (iOS 12+)
 - ❌ Web (not currently supported)
 - ❌ Desktop (not currently supported)
 
@@ -415,13 +415,6 @@ cd frontend
 flutter build appbundle --release
 ```
 
-### iOS
-
-```bash
-cd frontend
-flutter build ios --release
-```
-
 ---
 
 ## 🤝 Contributing
@@ -443,12 +436,6 @@ We welcome contributions! Please follow these steps:
 
 ---
 
-## 📄 License
-
-This project is licensed under the ISC License - see the [LICENSE](LICENSE) file for details.
-
----
-
 ## 🙏 Acknowledgments
 
 - Flutter team for the amazing framework
@@ -460,8 +447,8 @@ This project is licensed under the ISC License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support & Contact
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/XPerience_Gaming/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/XPerience_Gaming/discussions)
+- **Issues**: [GitHub Issues](https://github.com/MohitSAGAR11/XPerience_Gaming/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/MohitSAGAR11/XPerience_Gaming/discussions)
 
 ---
 
@@ -482,7 +469,7 @@ This project is licensed under the ISC License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Made with ❤️ by the XPerience Gaming Team**
+**Made with ❤️ by the Mohit Sagar**
 
 ⭐ Star this repo if you find it helpful!
 
