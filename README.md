@@ -44,7 +44,6 @@ Finding the right gaming cafe with available slots, preferred games, and suitabl
 
 #### 🎮 Booking System
 - **💻 PC Station Booking**: Book high-performance gaming PCs with detailed specs
-- **🎮 Console Booking**: Reserve PS5, PS4, Xbox Series X/S, Xbox One, or Nintendo Switch
 - **⏰ Flexible Time Slots**: Choose your preferred date and time
 - **💰 Transparent Pricing**: See hourly rates before booking
 - **📱 Booking Management**: Track upcoming and past reservations
@@ -58,15 +57,13 @@ Finding the right gaming cafe with available slots, preferred games, and suitabl
 ### 🏪 For Cafe Owners
 
 #### 📊 Dashboard & Analytics
-- **📈 Performance Dashboard**: Overview of all cafes with key metrics
-- **💰 Earnings Tracking**: Monitor revenue and booking statistics
+- **📈 Performance Dashboard**: Overview of all cafes with key metrics (Upcoming)
+- **💰 Earnings Tracking**: Monitor revenue and booking statistics (Upcoming)
 - **📅 Booking Calendar**: View all reservations at a glance
 
 #### 🏢 Cafe Management
 - **➕ Multi-Cafe Support**: Manage multiple gaming cafes from one account
-- **🖥️ PC Inventory**: Add and manage PC stations with detailed specs
-- **🎮 Console Inventory**: Manage console availability (PS5, PS4, Xbox, Switch)
-- **🎯 Game Library**: List available games for each platform
+- **🖥️ PC Inventory**: Add and manage PC stations
 - **📸 Image Gallery**: Showcase your cafe with multiple photos
 
 #### 📋 Booking Management
