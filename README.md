@@ -20,12 +20,12 @@
 
 ## 📖 Overview
 
-**XPerience Gaming** is a full-stack mobile application that revolutionizes how gamers discover and book gaming cafes. Whether you're looking for high-end PC stations or console gaming setups, our platform connects gamers with the perfect gaming experience.
+**XPerience Gaming** is a full-stack mobile application that revolutionizes how gamers discover and book gaming cafes. Whether you're looking for high-end PC stations, our platform connects gamers with the perfect gaming experience.
 
 ### 🎯 Problem We Solve
 
 Finding the right gaming cafe with available slots, preferred games, and suitable hardware can be frustrating. XPerience Gaming eliminates this hassle by providing:
-- **Real-time availability** of PC stations and consoles
+- **Real-time availability** of PC stations
 - **Location-based discovery** of nearby gaming cafes
 - **Smart search** by cafe name or game titles
 - **Seamless booking** experience for both gamers and cafe owners

@@ -7,10 +7,10 @@ A robust Node.js/Express backend for a Gaming Cafe discovery and booking platfor
 - **Dual Role Authentication**: Secure JWT-based auth for Clients (Gamers) and Owners
 - **Geospatial Discovery**: Find nearby cafes using Haversine formula
 - **Hybrid Search**: Search cafes by name or available games
-- **PC & Console Support**: Book PC stations or gaming consoles (PS5, PS4, Xbox, Nintendo Switch)
-- **Hardware & Game Inventory**: Track detailed PC specs, console inventory, and game libraries per platform
-- **Conflict-Free Booking**: Real-time slot availability with double-booking prevention for both PCs and consoles
-- **Automated Billing**: Calculates costs based on duration and hourly rates (different rates for PC/consoles)
+- **PC Station Booking**: Book PC stations with detailed hardware specs
+- **Hardware & Game Inventory**: Track detailed PC specs and game libraries
+- **Conflict-Free Booking**: Real-time slot availability with double-booking prevention
+- **Automated Billing**: Calculates costs based on duration and hourly rates
 - **Booking History**: Track past and upcoming reservations
 
 ## 📁 Project Structure
@@ -171,63 +171,24 @@ GET /api/cafes?search=Valorant
    }
    ```
 
-### 🎮 Console Booking
-
-1. **Check Console Availability**
-   ```json
-   POST /api/bookings/check-availability
-   {
-     "cafeId": "uuid",
-     "stationType": "console",
-     "consoleType": "ps5",
-     "stationNumber": 1,
-     "bookingDate": "2024-12-25",
-     "startTime": "14:00",
-     "endTime": "17:00"
-   }
-   ```
-
-2. **Create Console Booking**
-   ```json
-   POST /api/bookings
-   {
-     "cafeId": "uuid",
-     "stationType": "console",
-     "consoleType": "ps5",
-     "stationNumber": 1,
-     "bookingDate": "2024-12-25",
-     "startTime": "14:00",
-     "endTime": "17:00"
-   }
-   ```
-
-**Supported Console Types:**
-- `ps5` - PlayStation 5
-- `ps4` - PlayStation 4
-- `xbox_series_x` - Xbox Series X
-- `xbox_series_s` - Xbox Series S
-- `xbox_one` - Xbox One
-- `nintendo_switch` - Nintendo Switch
-
 ### Billing Response
 
-Response includes automated billing with type-specific rates:
+Response includes automated billing:
 ```json
 {
   "booking": { ... },
   "billing": {
-    "stationType": "console",
-    "consoleType": "ps5",
+    "stationType": "pc",
     "durationHours": 3,
-    "hourlyRate": 150,
-    "totalAmount": 450
+    "hourlyRate": 100,
+    "totalAmount": 300
   }
 }
 ```
 
-## 🏪 Cafe Setup with Consoles
+## 🏪 Cafe Setup
 
-Create a cafe with PC and console inventory:
+Create a cafe with PC inventory:
 
 ```json
 POST /api/cafes
@@ -246,13 +207,7 @@ POST /api/cafes
     "ram": "32GB DDR5",
     "monitors": "27\" 165Hz"
   },
-  "pcGames": ["Valorant", "CS2", "Fortnite", "GTA V"],
-  "consoles": {
-    "ps5": { "quantity": 5, "hourlyRate": 150, "games": ["FIFA 24", "Spider-Man 2", "God of War"] },
-    "xbox_series_x": { "quantity": 3, "hourlyRate": 150, "games": ["Halo Infinite", "Forza Horizon 5"] },
-    "nintendo_switch": { "quantity": 4, "hourlyRate": 100, "games": ["Mario Kart 8", "Zelda TOTK"] }
-  },
-  "totalConsoles": 12
+  "pcGames": ["Valorant", "CS2", "Fortnite", "GTA V"]
 }
 ```
 
