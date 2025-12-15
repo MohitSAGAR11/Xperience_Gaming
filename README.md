@@ -6,7 +6,7 @@
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.2+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-316192?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Firestore](https://img.shields.io/badge/Firestore-Latest-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/products/firestore)
 [![Firebase](https://img.shields.io/badge/Firebase-Latest-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com)
 [![License](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 
@@ -100,19 +100,17 @@ Finding the right gaming cafe with available slots, preferred games, and suitabl
 |----------|-----------|
 | **Runtime** | Node.js 18+ |
 | **Framework** | Express.js 4.18 |
-| **Database** | PostgreSQL 14+ |
-| **ORM** | Sequelize |
-| **Authentication** | JWT (JSON Web Tokens) |
-| **File Upload** | Multer |
+| **Database** | Firebase Firestore (NoSQL) |
+| **Authentication** | Firebase Auth + JWT |
+| **File Upload** | Multer + Firebase Storage |
 | **Validation** | express-validator |
 | **Cloud Services** | Firebase Admin SDK |
 | **Notifications** | Firebase Cloud Messaging |
 
 ### ☁️ Infrastructure
 
-- **Firebase**: Authentication, Cloud Messaging, Firestore
+- **Firebase**: Authentication, Cloud Messaging, Firestore (NoSQL database), Storage
 - **Google Maps API**: Location services and maps
-- **PostgreSQL**: Relational database for structured data
 
 ---
 
@@ -156,8 +154,7 @@ XPerience_Gaming/
 
 - **Flutter SDK** 3.2.0 or higher
 - **Node.js** 18.0 or higher
-- **PostgreSQL** 14.0 or higher
-- **Firebase Account** (for authentication and notifications)
+- **Firebase Account** (for authentication, Firestore database, and notifications)
 - **Google Cloud Account** (for Maps API)
 - **Android Studio** or **VS Code** with Flutter extensions
 
@@ -189,13 +186,6 @@ Configure your `.env` file:
 PORT=5000
 NODE_ENV=development
 
-# Database Configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=gaming_cafe_db
-DB_USER=postgres
-DB_PASSWORD=your_password
-
 # JWT Configuration
 JWT_SECRET=your_super_secret_jwt_key
 JWT_EXPIRES_IN=7d
@@ -203,15 +193,18 @@ JWT_EXPIRES_IN=7d
 # CORS Configuration
 CORS_ORIGIN=http://localhost:5000
 
-# Firebase Configuration (path to service account JSON)
+# Firebase Configuration
 FIREBASE_SERVICE_ACCOUNT=./firebase-service-account.json
+FIREBASE_STORAGE_BUCKET=xperience-gaming.firebasestorage.app
 ```
 
-Create PostgreSQL database:
+**Firebase Setup:**
 
-```sql
-CREATE DATABASE gaming_cafe_db;
-```
+1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com)
+2. Enable **Firestore Database** and **Firebase Authentication**
+3. Enable **Firebase Storage** for image uploads
+4. Download `firebase-service-account.json` from Project Settings → Service Accounts
+5. Place the JSON file in the `backend/` directory
 
 Start the backend server:
 
