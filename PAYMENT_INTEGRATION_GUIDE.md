@@ -1,6 +1,30 @@
-# 💳 Payment Integration & Refund System Guide
+# 💳 Payment Integration & Refund System Guide (PayU)
 
-This document outlines everything needed to implement payment processing and refund functionality for the XPerience Gaming booking system.
+This document outlines everything needed to implement payment processing and refund functionality for the XPerience Gaming booking system using **PayU payment gateway**.
+
+## 🚀 Quick Start Summary
+
+### **What You Need to Do:**
+
+#### **Backend (Your Side):**
+1. ✅ Get PayU Merchant Key & Salt from PayU dashboard
+2. ✅ Add credentials to `.env` file
+3. ✅ Install `crypto` and `axios` packages
+4. ✅ Create payment controller with hash generation
+5. ✅ Create refund controller with PayU API integration
+6. ✅ Set up payment routes with success/failure callbacks
+
+#### **Frontend (My Side):**
+1. ✅ Add `webview_flutter` package
+2. ✅ Create payment service for PayU integration
+3. ✅ Create payment screen with WebView
+4. ✅ Handle payment callbacks (success/failure)
+
+### **Key PayU Differences:**
+- Uses **SHA512 hash** (not HMAC signature)
+- Requires **hosted payment page** (WebView integration)
+- Merchant generates **transaction ID** (txnid)
+- Uses **POST API** for refunds (not SDK methods)
 
 ---
 
@@ -20,41 +44,45 @@ This document outlines everything needed to implement payment processing and ref
 
 ### **From Your Side (Backend):**
 
-#### 1. **Install Razorpay SDK**
+#### 1. **Install Required Packages**
 ```bash
 cd backend
-npm install razorpay
+npm install crypto axios
 ```
+Note: PayU doesn't require a specific SDK. We'll use HTTP requests and crypto for hash generation.
 
-#### 2. **Add Razorpay Configuration to `.env`**
+#### 2. **Add PayU Configuration to `.env`**
 ```env
-RAZORPAY_KEY_ID=your_razorpay_key_id
-RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+# PayU Configuration
+PAYU_MERCHANT_KEY=your_payu_merchant_key
+PAYU_MERCHANT_SALT=your_payu_merchant_salt
+PAYU_MODE=test  # or 'production' for live
+PAYU_BASE_URL=https://test.payu.in  # or https://secure.payu.in for production
 ```
 
 #### 3. **Create Payment Controller** (`backend/src/controllers/paymentController.js`)
 
 **Required Endpoints:**
 
-- **`POST /api/payments/create-order`** - Create Razorpay order
-  - Input: `{ bookingId, amount, currency: 'INR' }`
-  - Output: `{ orderId, amount, currency, keyId }`
+- **`POST /api/payments/create-payment`** - Generate PayU payment hash and parameters
+  - Input: `{ bookingId, amount, firstName, email, phone, productInfo }`
+  - Output: `{ transactionId, hash, merchantKey, amount, currency, productInfo, firstName, email, phone, surl, furl, curl, key }`
   
-- **`POST /api/payments/verify-payment`** - Verify payment signature
-  - Input: `{ orderId, paymentId, signature, bookingId }`
+- **`POST /api/payments/verify-payment`** - Verify payment response hash
+  - Input: `{ transactionId, paymentId, hash, bookingId, status }`
   - Output: `{ success, message, booking }`
   
 - **`POST /api/payments/payment-failed`** - Handle failed payments
-  - Input: `{ orderId, bookingId, reason }`
+  - Input: `{ transactionId, bookingId, reason }`
   - Output: `{ success, message }`
 
 #### 4. **Update Booking Model**
 Add payment-related fields to booking document:
-- `paymentOrderId` (String) - Razorpay order ID
-- `paymentId` (String) - Razorpay payment ID
-- `paymentSignature` (String) - Payment verification signature
+- `paymentTransactionId` (String) - PayU transaction ID (txnid)
+- `paymentId` (String) - PayU payment ID
+- `paymentHash` (String) - Payment verification hash
 - `paymentStatus` (String) - 'unpaid', 'pending', 'paid', 'failed', 'refunded'
-- `paymentMethod` (String) - 'razorpay', 'cash', etc.
+- `paymentMethod` (String) - 'payu', 'cash', etc.
 - `paidAt` (Date) - When payment was completed
 
 #### 5. **Update Booking Creation Flow**
@@ -67,16 +95,18 @@ Modify `createBooking` in `bookingController.js`:
 
 ### **From My Side (Frontend):**
 
-#### 1. **Add Razorpay Flutter Package**
+#### 1. **Add Required Flutter Packages**
 ```yaml
 # frontend/pubspec.yaml
 dependencies:
-  razorpay_flutter: ^1.3.6
+  webview_flutter: ^4.4.2  # For PayU payment page
+  url_launcher: ^6.2.2     # Alternative: Open PayU in external browser
 ```
 
 #### 2. **Create Payment Service** (`frontend/lib/services/payment_service.dart`)
-- Initialize Razorpay
-- Handle payment callbacks
+- Generate payment hash with backend
+- Open PayU payment page (WebView or browser)
+- Handle payment success/failure callbacks
 - Verify payment with backend
 
 #### 3. **Update Booking Summary Popup**
@@ -88,8 +118,8 @@ Modify `slot_selection_screen.dart`:
 #### 4. **Create Payment Screen** (`frontend/lib/screens/client/payment/payment_screen.dart`)
 - Display booking summary
 - Show payment amount
-- Initialize Razorpay checkout
-- Handle payment success/failure
+- Load PayU payment page in WebView
+- Handle payment success/failure redirects
 
 #### 5. **Update Booking Flow**
 - After payment success → Navigate to booking confirmation
@@ -129,28 +159,29 @@ if (booking.paymentStatus === 'paid') {
   // Calculate refund amount (full or partial based on cancellation policy)
   const refundAmount = calculateRefundAmount(booking);
   
-  // Initiate Razorpay refund
-  const refund = await razorpay.payments.refund(paymentId, {
-    amount: refundAmount * 100, // Convert to paise
-    notes: { reason: 'Booking cancelled' }
+  // Initiate PayU refund via API
+  const refund = await initiatePayURefund({
+    paymentId: booking.paymentId,
+    amount: refundAmount,
+    reason: 'Booking cancelled'
   });
   
   // Update booking
   booking.paymentStatus = 'refunded';
-  booking.refundId = refund.id;
+  booking.refundId = refund.refundId;
   booking.refundAmount = refundAmount;
   booking.refundedAt = new Date();
 }
 ```
 
 #### 4. **Cancellation Policy**
-Implement cancellation policy logic:
-- Full refund if cancelled X hours before booking
-- Partial refund if cancelled within X hours
-- No refund if cancelled after booking start time
+**Refund Rules:**
+- **Full refund** if cancelled **before 1 hour** of booking slot start time
+- **No refund** if cancelled **within 1 hour** of booking slot start time
+- Users booking slots within 1 hour will see a warning that they won't get refunds
 
 #### 5. **Add Refund Fields to Booking Model**
-- `refundId` (String) - Razorpay refund ID
+- `refundId` (String) - PayU refund ID
 - `refundAmount` (Number) - Amount refunded
 - `refundStatus` (String) - 'pending', 'processed', 'failed'
 - `refundedAt` (Date) - When refund was processed
@@ -186,18 +217,30 @@ Add refund-related fields to `Booking` class:
 
 ```javascript
 // backend/src/controllers/paymentController.js
-const Razorpay = require('razorpay');
+const crypto = require('crypto');
+const axios = require('axios');
 const { db } = require('../config/firebase');
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+const PAYU_MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+const PAYU_MERCHANT_SALT = process.env.PAYU_MERCHANT_SALT;
+const PAYU_BASE_URL = process.env.PAYU_BASE_URL || 'https://test.payu.in';
 
-// Create Razorpay order
-const createOrder = async (req, res) => {
+// Generate PayU payment hash
+function generatePaymentHash(params) {
+  const hashString = `${PAYU_MERCHANT_KEY}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||${PAYU_MERCHANT_SALT}`;
+  return crypto.createHash('sha512').update(hashString).digest('hex');
+}
+
+// Generate PayU response hash for verification
+function generateResponseHash(params) {
+  const hashString = `${PAYU_MERCHANT_SALT}|${params.status}|||||||||||${params.email}|${params.firstname}|${params.productinfo}|${params.amount}|${params.txnid}|${PAYU_MERCHANT_KEY}`;
+  return crypto.createHash('sha512').update(hashString).digest('hex');
+}
+
+// Create PayU payment
+const createPayment = async (req, res) => {
   try {
-    const { bookingId, amount } = req.body;
+    const { bookingId, amount, firstName, email, phone, productInfo } = req.body;
     
     // Verify booking exists and belongs to user
     const bookingDoc = await db.collection('bookings').doc(bookingId).get();
@@ -205,22 +248,31 @@ const createOrder = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Booking not found' });
     }
     
-    // Create Razorpay order
-    const options = {
-      amount: Math.round(amount * 100), // Convert to paise
-      currency: 'INR',
-      receipt: `booking_${bookingId}`,
-      notes: {
-        bookingId: bookingId,
-        userId: req.user.id
-      }
+    // Generate unique transaction ID
+    const transactionId = `TXN_${bookingId}_${Date.now()}`;
+    
+    // Prepare payment parameters
+    const paymentParams = {
+      key: PAYU_MERCHANT_KEY,
+      txnid: transactionId,
+      amount: amount.toString(),
+      productinfo: productInfo || `Booking ${bookingId}`,
+      firstname: firstName || req.user.name || 'Guest',
+      email: email || req.user.email,
+      phone: phone || req.user.phone || '',
+      surl: `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/payments/success`,
+      furl: `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/payments/failure`,
+      curl: `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/payments/cancel`,
+      hash: '',
+      service_provider: 'payu_paisa'
     };
     
-    const order = await razorpay.orders.create(options);
+    // Generate hash
+    paymentParams.hash = generatePaymentHash(paymentParams);
     
-    // Update booking with order ID
+    // Update booking with transaction ID
     await db.collection('bookings').doc(bookingId).update({
-      paymentOrderId: order.id,
+      paymentTransactionId: transactionId,
       paymentStatus: 'pending',
       updatedAt: new Date()
     });
@@ -228,73 +280,106 @@ const createOrder = async (req, res) => {
     res.json({
       success: true,
       data: {
-        orderId: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        keyId: process.env.RAZORPAY_KEY_ID
+        ...paymentParams,
+        paymentUrl: `${PAYU_BASE_URL}/_payment`
       }
     });
   } catch (error) {
-    console.error('Create order error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create order' });
+    console.error('Create payment error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create payment' });
   }
 };
 
-// Verify payment
+// Verify payment (called from PayU success URL)
 const verifyPayment = async (req, res) => {
   try {
-    const { orderId, paymentId, signature, bookingId } = req.body;
+    const { txnid, mihpayid, status, hash, bookingId } = req.body;
     
-    // Verify signature
-    const crypto = require('crypto');
-    const generatedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(`${orderId}|${paymentId}`)
-      .digest('hex');
+    // Verify hash
+    const generatedHash = generateResponseHash(req.body);
     
-    if (generatedSignature !== signature) {
-      return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+    if (generatedHash !== hash) {
+      return res.status(400).json({ success: false, message: 'Invalid payment hash' });
     }
     
-    // Update booking
-    await db.collection('bookings').doc(bookingId).update({
-      paymentId: paymentId,
-      paymentSignature: signature,
-      paymentStatus: 'paid',
-      status: 'confirmed',
-      paidAt: new Date(),
-      updatedAt: new Date()
-    });
-    
-    // Fetch updated booking
+    // Get booking
     const bookingDoc = await db.collection('bookings').doc(bookingId).get();
-    const booking = { id: bookingDoc.id, ...bookingDoc.data() };
+    if (!bookingDoc.exists) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
     
-    res.json({
-      success: true,
-      message: 'Payment verified successfully',
-      data: { booking }
-    });
+    // Update booking based on status
+    if (status === 'success') {
+      await db.collection('bookings').doc(bookingId).update({
+        paymentId: mihpayid,
+        paymentHash: hash,
+        paymentStatus: 'paid',
+        status: 'confirmed',
+        paidAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      // Fetch updated booking
+      const updatedBookingDoc = await db.collection('bookings').doc(bookingId).get();
+      const booking = { id: updatedBookingDoc.id, ...updatedBookingDoc.data() };
+      
+      // Redirect to success page (frontend URL)
+      const frontendSuccessUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/booking/${bookingId}/success?paymentId=${mihpayid}`;
+      return res.redirect(frontendSuccessUrl);
+    } else {
+      // Payment failed
+      await db.collection('bookings').doc(bookingId).update({
+        paymentStatus: 'failed',
+        updatedAt: new Date()
+      });
+      
+      const frontendFailureUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/booking/${bookingId}/failure?reason=${status}`;
+      return res.redirect(frontendFailureUrl);
+    }
   } catch (error) {
     console.error('Verify payment error:', error);
     res.status(500).json({ success: false, message: 'Payment verification failed' });
   }
 };
 
-module.exports = { createOrder, verifyPayment };
+// Handle payment failure
+const handlePaymentFailure = async (req, res) => {
+  try {
+    const { txnid, bookingId } = req.body;
+    
+    await db.collection('bookings').doc(bookingId).update({
+      paymentStatus: 'failed',
+      updatedAt: new Date()
+    });
+    
+    const frontendFailureUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/booking/${bookingId}/failure`;
+    return res.redirect(frontendFailureUrl);
+  } catch (error) {
+    console.error('Payment failure handler error:', error);
+    res.status(500).json({ success: false, message: 'Failed to process payment failure' });
+  }
+};
+
+module.exports = { createPayment, verifyPayment, handlePaymentFailure };
 ```
 
 ### **2. Refund Controller Implementation**
 
 ```javascript
 // backend/src/controllers/refundController.js
-const Razorpay = require('razorpay');
+const crypto = require('crypto');
+const axios = require('axios');
 const { db } = require('../config/firebase');
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+const PAYU_MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+const PAYU_MERCHANT_SALT = process.env.PAYU_MERCHANT_SALT;
+const PAYU_BASE_URL = process.env.PAYU_BASE_URL || 'https://test.payu.in';
+
+// Generate PayU refund hash
+function generateRefundHash(paymentId, amount) {
+  const hashString = `${PAYU_MERCHANT_KEY}|${paymentId}|${amount}|${PAYU_MERCHANT_SALT}`;
+  return crypto.createHash('sha512').update(hashString).digest('hex');
+}
 
 // Initiate refund
 const initiateRefund = async (req, res) => {
@@ -321,57 +406,86 @@ const initiateRefund = async (req, res) => {
     // Calculate refund amount (implement your cancellation policy)
     const refundAmount = amount || calculateRefundAmount(booking);
     
-    // Initiate refund via Razorpay
-    const refund = await razorpay.payments.refund(booking.paymentId, {
-      amount: Math.round(refundAmount * 100), // Convert to paise
-      notes: {
-        reason: reason || 'Booking cancelled',
-        bookingId: bookingId
+    // Generate refund hash
+    const refundHash = generateRefundHash(booking.paymentId, refundAmount);
+    
+    // Initiate refund via PayU API
+    const refundData = {
+      key: PAYU_MERCHANT_KEY,
+      command: 'cancel_refund_transaction',
+      var1: booking.paymentId, // Payment ID
+      var2: refundAmount.toString(), // Refund amount
+      hash: refundHash
+    };
+    
+    // Call PayU refund API
+    // Note: PayU refund API endpoint may vary - check PayU documentation for latest endpoint
+    const refundResponse = await axios.post(
+      `${PAYU_BASE_URL}/merchant/postservice?form=2`,
+      new URLSearchParams(refundData).toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
       }
-    });
+    );
     
-    // Update booking
-    await db.collection('bookings').doc(bookingId).update({
-      refundId: refund.id,
-      refundAmount: refundAmount,
-      refundStatus: refund.status,
-      paymentStatus: 'refunded',
-      refundedAt: new Date(),
-      updatedAt: new Date()
-    });
+    // Parse PayU response
+    const refundResult = refundResponse.data;
     
-    res.json({
-      success: true,
-      message: 'Refund initiated successfully',
-      data: {
-        refundId: refund.id,
+    if (refundResult.status === 'success' || refundResult.status === 1) {
+      // Update booking
+      await db.collection('bookings').doc(bookingId).update({
+        refundId: refundResult.refundId || `REF_${Date.now()}`,
         refundAmount: refundAmount,
-        refundStatus: refund.status
-      }
-    });
+        refundStatus: 'processed',
+        paymentStatus: 'refunded',
+        refundReason: reason || 'Booking cancelled',
+        refundedAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      res.json({
+        success: true,
+        message: 'Refund initiated successfully',
+        data: {
+          refundId: refundResult.refundId,
+          refundAmount: refundAmount,
+          refundStatus: 'processed'
+        }
+      });
+    } else {
+      // Refund failed
+      await db.collection('bookings').doc(bookingId).update({
+        refundStatus: 'failed',
+        updatedAt: new Date()
+      });
+      
+      res.status(400).json({
+        success: false,
+        message: refundResult.message || 'Refund failed',
+        data: refundResult
+      });
+    }
   } catch (error) {
     console.error('Refund error:', error);
-    res.status(500).json({ success: false, message: 'Refund failed' });
+    res.status(500).json({ success: false, message: 'Refund failed', error: error.message });
   }
 };
 
 // Calculate refund amount based on cancellation policy
+// Full refund if cancelled before 1 hour of booking slot, otherwise no refund
 function calculateRefundAmount(booking) {
   const bookingDateTime = new Date(`${booking.bookingDate}T${booking.startTime}`);
   const now = new Date();
   const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
   
-  // Full refund if cancelled 24+ hours before
-  if (hoursUntilBooking >= 24) {
+  // Full refund if cancelled 1+ hours before booking start time
+  if (hoursUntilBooking >= 1) {
     return booking.totalAmount;
   }
   
-  // 50% refund if cancelled 12-24 hours before
-  if (hoursUntilBooking >= 12) {
-    return booking.totalAmount * 0.5;
-  }
-  
-  // No refund if cancelled less than 12 hours before
+  // No refund if cancelled less than 1 hour before booking
   return 0;
 }
 
@@ -381,40 +495,53 @@ module.exports = { initiateRefund };
 ### **3. Update Booking Routes**
 
 ```javascript
-// backend/src/routes/bookingRoutes.js
-// Add payment routes
-const { createOrder, verifyPayment } = require('../controllers/paymentController');
+// backend/src/routes/paymentRoutes.js (create new file)
+const express = require('express');
+const router = express.Router();
+const { protect } = require('../middleware/authMiddleware');
+const { createPayment, verifyPayment, handlePaymentFailure } = require('../controllers/paymentController');
 const { initiateRefund } = require('../controllers/refundController');
 
 // Payment routes
-router.post('/payments/create-order', protect, createOrder);
-router.post('/payments/verify-payment', protect, verifyPayment);
-router.post('/payments/:bookingId/refund', protect, initiateRefund);
+router.post('/create-payment', protect, createPayment);
+router.post('/success', verifyPayment); // PayU success callback (no auth needed)
+router.post('/failure', handlePaymentFailure); // PayU failure callback
+router.post('/cancel', handlePaymentFailure); // PayU cancel callback
+router.post('/:bookingId/refund', protect, initiateRefund);
+
+module.exports = router;
+
+// In server.js or main routes file:
+// const paymentRoutes = require('./routes/paymentRoutes');
+// app.use('/api/payments', paymentRoutes);
 ```
 
 ### **4. Update Cancel Booking to Auto-Refund**
 
 ```javascript
 // In bookingController.js - cancelBooking function
-// After line 872 (before updating status), add:
+// After checking booking status, add:
 
 // Check if payment was made and initiate refund
 if (booking.paymentStatus === 'paid' && booking.paymentId) {
   try {
-    const refundController = require('./refundController');
-    await refundController.initiateRefund({ 
+    const { initiateRefund } = require('./refundController');
+    const refundReq = {
       params: { bookingId: req.params.id },
       body: { reason: 'Booking cancelled by user' },
       user: req.user
-    }, {
+    };
+    const refundRes = {
       json: (data) => {
         console.log('Refund initiated:', data);
       },
       status: (code) => ({ json: (data) => {} })
-    });
+    };
+    await initiateRefund(refundReq, refundRes);
   } catch (refundError) {
     console.error('Refund error during cancellation:', refundError);
     // Continue with cancellation even if refund fails
+    // You may want to notify admin about refund failure
   }
 }
 ```
@@ -423,98 +550,113 @@ if (booking.paymentStatus === 'paid' && booking.paymentId) {
 
 ## 📱 Frontend Requirements (Detailed)
 
-### **1. Add Razorpay Package**
+### **1. Add Required Packages**
 
 ```yaml
 # frontend/pubspec.yaml
 dependencies:
-  razorpay_flutter: ^1.3.6
+  webview_flutter: ^4.4.2
+  url_launcher: ^6.2.2
+  flutter_inappwebview: ^6.0.0  # Alternative: More features than webview_flutter
 ```
 
 ### **2. Create Payment Service**
 
 ```dart
 // frontend/lib/services/payment_service.dart
-import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/api_client.dart';
 import '../config/constants.dart';
 
 class PaymentService {
-  final Razorpay _razorpay = Razorpay();
   final ApiClient _apiClient;
   
-  PaymentService(this._apiClient) {
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
-  }
+  PaymentService(this._apiClient);
   
-  Future<void> initiatePayment({
+  /// Initiate PayU payment
+  /// Returns payment URL and parameters to load in WebView
+  Future<Map<String, dynamic>> initiatePayment({
     required String bookingId,
     required double amount,
-    required Function(String) onSuccess,
-    required Function(String) onError,
+    required String firstName,
+    required String email,
+    String? phone,
+    String? productInfo,
   }) async {
     try {
-      // Create order on backend
+      // Create payment on backend
       final response = await _apiClient.post<Map<String, dynamic>>(
-        '${ApiConstants.payments}/create-order',
+        '${ApiConstants.payments}/create-payment',
         data: {
           'bookingId': bookingId,
           'amount': amount,
+          'firstName': firstName,
+          'email': email,
+          'phone': phone,
+          'productInfo': productInfo ?? 'Booking Payment',
         },
       );
       
       if (!response.isSuccess || response.data == null) {
-        onError('Failed to create payment order');
-        return;
+        throw Exception('Failed to create payment: ${response.message}');
       }
       
-      final orderData = response.data!['data'];
-      
-      // Open Razorpay checkout
-      final options = {
-        'key': orderData['keyId'],
-        'amount': orderData['amount'],
-        'name': 'XPerience Gaming',
-        'description': 'Booking Payment',
-        'prefill': {
-          'contact': '', // Get from user profile
-          'email': '', // Get from user profile
-        },
-        'external': {
-          'wallets': ['paytm']
-        }
-      };
-      
-      _razorpay.open(options);
+      return response.data!['data'];
     } catch (e) {
-      onError('Payment initialization failed: $e');
+      throw Exception('Payment initialization failed: $e');
     }
   }
   
-  void _handlePaymentSuccess(PaymentSuccessResponse response) {
-    // Verify payment with backend
-    _verifyPayment(response);
+  /// Build PayU payment form HTML
+  String buildPaymentForm(Map<String, dynamic> paymentParams) {
+    final formFields = paymentParams.entries.map((entry) {
+      return '<input type="hidden" name="${entry.key}" value="${entry.value}">';
+    }).join('\n');
+    
+    return '''
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PayU Payment</title>
+      </head>
+      <body>
+        <form id="payuForm" action="${paymentParams['paymentUrl']}" method="post">
+          $formFields
+        </form>
+        <script>
+          document.getElementById('payuForm').submit();
+        </script>
+      </body>
+      </html>
+    ''';
   }
   
-  void _handlePaymentError(PaymentFailureResponse response) {
-    // Handle payment failure
-    print('Payment failed: ${response.message}');
-  }
-  
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    // Handle external wallet
-    print('External wallet: ${response.walletName}');
-  }
-  
-  Future<void> _verifyPayment(PaymentSuccessResponse response) async {
-    // Call backend to verify payment
-    // Update booking status
-  }
-  
-  void dispose() {
-    _razorpay.clear();
+  /// Handle payment success callback
+  Future<bool> verifyPayment({
+    required String transactionId,
+    required String paymentId,
+    required String hash,
+    required String bookingId,
+    required String status,
+  }) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '${ApiConstants.payments}/verify-payment',
+        data: {
+          'txnid': transactionId,
+          'mihpayid': paymentId,
+          'hash': hash,
+          'bookingId': bookingId,
+          'status': status,
+        },
+      );
+      
+      return response.isSuccess;
+    } catch (e) {
+      return false;
+    }
   }
 }
 ```
@@ -533,24 +675,24 @@ A dedicated screen for payment processing with booking summary.
 
 ### **Phase 1: Backend Setup (Your Side)**
 
-1. ✅ Install Razorpay SDK: `npm install razorpay`
-2. ✅ Add Razorpay keys to `.env`
-3. ✅ Create `paymentController.js` with order creation and verification
-4. ✅ Create `refundController.js` with refund logic
-5. ✅ Update booking routes to include payment endpoints
+1. ✅ Install required packages: `npm install crypto axios`
+2. ✅ Add PayU credentials to `.env` (Merchant Key & Salt)
+3. ✅ Create `paymentController.js` with payment hash generation and verification
+4. ✅ Create `refundController.js` with PayU refund API integration
+5. ✅ Create `paymentRoutes.js` with payment endpoints
 6. ✅ Modify `cancelBooking` to auto-initiate refunds
 7. ✅ Update booking model to include payment/refund fields
-8. ✅ Test payment flow with Razorpay test keys
+8. ✅ Test payment flow with PayU test credentials
 
 ### **Phase 2: Frontend Setup (My Side)**
 
-1. ✅ Add `razorpay_flutter` package
-2. ✅ Create `PaymentService` class
+1. ✅ Add `webview_flutter` or `flutter_inappwebview` package
+2. ✅ Create `PaymentService` class for PayU integration
 3. ✅ Update booking summary popup
-4. ✅ Create payment screen
+4. ✅ Create payment screen with WebView
 5. ✅ Update booking model with payment/refund fields
 6. ✅ Update cancel booking flow to show refund info
-7. ✅ Test payment integration
+7. ✅ Test payment integration with PayU test environment
 
 ### **Phase 3: Integration & Testing**
 
@@ -564,12 +706,14 @@ A dedicated screen for payment processing with booking summary.
 
 ## 🔐 Security Considerations
 
-1. **Never store Razorpay Key Secret in frontend**
-2. **Always verify payment signature on backend**
-3. **Use HTTPS in production**
-4. **Validate all payment data on backend**
-5. **Implement rate limiting on payment endpoints**
-6. **Log all payment transactions for audit**
+1. **Never store PayU Merchant Salt in frontend** - Keep it only on backend
+2. **Always verify payment hash on backend** - Use SHA512 hash verification
+3. **Use HTTPS in production** - PayU requires HTTPS for production
+4. **Validate all payment data on backend** - Never trust frontend data
+5. **Implement rate limiting on payment endpoints** - Prevent abuse
+6. **Log all payment transactions for audit** - Keep transaction logs
+7. **Use PayU test mode during development** - Test with sandbox credentials
+8. **Handle webhook callbacks securely** - Verify webhook signatures if using webhooks
 
 ---
 
@@ -582,11 +726,11 @@ A dedicated screen for payment processing with booking summary.
   // ... existing fields ...
   
   // Payment fields
-  paymentOrderId: String,
-  paymentId: String,
-  paymentSignature: String,
+  paymentTransactionId: String,  // PayU txnid
+  paymentId: String,              // PayU mihpayid
+  paymentHash: String,            // PayU hash for verification
   paymentStatus: 'unpaid' | 'pending' | 'paid' | 'failed' | 'refunded',
-  paymentMethod: 'razorpay' | 'cash',
+  paymentMethod: 'payu' | 'cash',
   paidAt: Date,
   
   // Refund fields
@@ -603,13 +747,14 @@ A dedicated screen for payment processing with booking summary.
 ## 🧪 Testing Checklist
 
 ### **Payment Flow:**
-- [ ] Create booking order
-- [ ] Open Razorpay checkout
+- [ ] Create payment hash on backend
+- [ ] Load PayU payment page in WebView
 - [ ] Complete payment successfully
-- [ ] Verify payment on backend
+- [ ] Verify payment hash on backend
 - [ ] Update booking status to confirmed
 - [ ] Handle payment failure
 - [ ] Handle payment cancellation
+- [ ] Test success/failure/cancel callbacks
 
 ### **Refund Flow:**
 - [ ] Cancel paid booking
@@ -623,22 +768,55 @@ A dedicated screen for payment processing with booking summary.
 
 ## 📞 Support & Resources
 
-- **Razorpay Documentation:** https://razorpay.com/docs/
-- **Razorpay Flutter SDK:** https://pub.dev/packages/razorpay_flutter
-- **Razorpay Dashboard:** https://dashboard.razorpay.com/
+- **PayU Documentation:** https://devguide.payu.in/
+- **PayU Integration Guide:** https://devguide.payu.in/docs/payment-gateway/
+- **PayU API Reference:** https://devguide.payu.in/api-reference/
+- **PayU Merchant Dashboard:** https://dashboard.payu.in/
+- **PayU Test Credentials:** Available in PayU dashboard under Test Mode
+- **PayU Hash Generation:** https://devguide.payu.in/docs/payment-gateway/hash-generation/
 
 ---
 
 ## ⚠️ Important Notes
 
-1. **Test Mode:** Use Razorpay test keys during development
-2. **Webhook Setup:** Consider setting up webhooks for payment status updates
-3. **Refund Policy:** Define and document your cancellation/refund policy clearly
-4. **User Communication:** Notify users about refund processing time (usually 5-7 business days)
-5. **Error Handling:** Implement comprehensive error handling for all payment scenarios
+1. **Test Mode:** Use PayU test credentials during development (available in dashboard)
+2. **Hash Generation:** Always generate hash on backend, never on frontend
+3. **Success/Failure URLs:** Configure proper callback URLs (surl, furl, curl) in payment params
+4. **Webhook Setup:** Consider setting up PayU webhooks for payment status updates (optional)
+5. **Refund Policy:** Define and document your cancellation/refund policy clearly
+6. **User Communication:** Notify users about refund processing time (usually 5-7 business days)
+7. **Error Handling:** Implement comprehensive error handling for all payment scenarios
+8. **HTTPS Required:** PayU production requires HTTPS - ensure SSL certificate is configured
+9. **Transaction ID:** Generate unique transaction IDs (txnid) for each payment
+10. **Payment Methods:** PayU supports Credit/Debit Cards, UPI, Net Banking, Wallets - configure in dashboard
 
 ---
 
-**Last Updated:** [Current Date]
-**Version:** 1.0.0
+## 🔄 PayU vs Razorpay Key Differences
+
+### **Hash Generation:**
+- **PayU:** Uses SHA512 hash with specific string format
+- **Razorpay:** Uses HMAC SHA256 signature
+
+### **Payment Flow:**
+- **PayU:** Redirects to PayU hosted page (WebView integration)
+- **Razorpay:** Can use SDK for native checkout
+
+### **Refund API:**
+- **PayU:** Uses POST API with hash verification
+- **Razorpay:** Uses SDK methods for refunds
+
+### **Transaction ID:**
+- **PayU:** Merchant generates unique txnid
+- **Razorpay:** Razorpay generates order ID
+
+### **Verification:**
+- **PayU:** Verifies response hash from callback
+- **Razorpay:** Verifies signature from payment response
+
+---
+
+**Last Updated:** December 2024
+**Version:** 2.0.0 (PayU Integration)
+**Payment Gateway:** PayU India
 

@@ -47,6 +47,7 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
     return Scaffold(
       backgroundColor: AppColors.trueBlack,
       body: SafeArea(
+        bottom: false, // Don't add bottom padding, let CustomScrollView handle it
         child: RefreshIndicator(
           onRefresh: () async {
             await ref.read(locationProvider.notifier).refreshLocation();
@@ -227,9 +228,11 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
                 ),
               ),
 
-              // Bottom Padding
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 100),
+              // Bottom Padding - Account for bottom navigation bar
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: MediaQuery.of(context).padding.bottom + 80, // Safe area + nav bar height
+                ),
               ),
             ],
           ),

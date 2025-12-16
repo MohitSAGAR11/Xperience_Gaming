@@ -67,7 +67,12 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
             }
 
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav
+              ),
               itemCount: feedResponse.posts.length,
               itemBuilder: (context, index) {
                 final post = feedResponse.posts[index];

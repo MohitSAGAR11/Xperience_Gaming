@@ -5,15 +5,16 @@ import 'package:firebase_core/firebase_core.dart';
 import 'dart:io' show Platform;
 
 import '../core/api_client.dart';
+import '../core/logger.dart';
 import '../config/constants.dart';
 
 /// Background message handler (must be top-level function)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('📬 Background message received: ${message.messageId}');
-  print('📬 Title: ${message.notification?.title}');
-  print('📬 Body: ${message.notification?.body}');
+  AppLogger.d('📬 Background message received: ${message.messageId}');
+  AppLogger.d('📬 Title: ${message.notification?.title}');
+  AppLogger.d('📬 Body: ${message.notification?.body}');
 }
 
 /// Notification Service for push notifications
@@ -27,13 +28,13 @@ class NotificationService {
 
   /// Initialize notification service
   Future<void> initialize() async {
-    print('📬 Initializing NotificationService...');
+    AppLogger.d('📬 Initializing NotificationService...');
 
     try {
       // Request permissions
       final settings = await _requestPermissions();
       if (settings.authorizationStatus != AuthorizationStatus.authorized) {
-        print('📬 Notification permission denied');
+        AppLogger.d('📬 Notification permission denied');
         return;
       }
 
@@ -43,10 +44,10 @@ class NotificationService {
       // Get FCM token and register with backend
       final token = await _messaging.getToken();
       if (token != null) {
-        print('📬 FCM Token obtained: ${token.substring(0, 20)}...');
+        AppLogger.d('📬 FCM Token obtained: ${token.substring(0, 20)}...');
         await _registerTokenWithBackend(token);
       } else {
-        print('📬 Failed to get FCM token');
+        AppLogger.d('📬 Failed to get FCM token');
       }
 
       // Listen for token refresh
@@ -61,13 +62,13 @@ class NotificationService {
       // Check if app was opened from a notification
       final initialMessage = await _messaging.getInitialMessage();
       if (initialMessage != null) {
-        print('📬 App opened from notification');
+        AppLogger.d('📬 App opened from notification');
         _handleNotificationTap(initialMessage);
       }
 
-      print('📬 NotificationService initialized successfully ✓');
+      AppLogger.d('📬 NotificationService initialized successfully ✓');
     } catch (e) {
-      print('📬 Error initializing NotificationService: $e');
+      AppLogger.d('📬 Error initializing NotificationService: $e');
     }
   }
 
@@ -124,7 +125,7 @@ class NotificationService {
   /// Register FCM token with backend
   Future<void> _registerTokenWithBackend(String token) async {
     try {
-      print('📬 Registering FCM token with backend...');
+      AppLogger.d('📬 Registering FCM token with backend...');
       
       final response = await _apiClient.post(
         '/auth/register-fcm-token',
@@ -132,24 +133,24 @@ class NotificationService {
       );
 
       if (response.isSuccess) {
-        print('📬 FCM token registered with backend ✓');
+        AppLogger.d('📬 FCM token registered with backend ✓');
       } else {
-        print('📬 Failed to register FCM token: ${response.message}');
+        AppLogger.d('📬 Failed to register FCM token: ${response.message}');
       }
     } catch (e) {
-      print('📬 Error registering FCM token: $e');
+      AppLogger.d('📬 Error registering FCM token: $e');
     }
   }
 
   /// Handle foreground messages
   void _handleForegroundMessage(RemoteMessage message) {
-    print('📬 ========================================');
-    print('📬 Foreground message received!');
-    print('📬 Message ID: ${message.messageId}');
-    print('📬 Title: ${message.notification?.title}');
-    print('📬 Body: ${message.notification?.body}');
-    print('📬 Data: ${message.data}');
-    print('📬 ========================================');
+    AppLogger.d('📬 ========================================');
+    AppLogger.d('📬 Foreground message received!');
+    AppLogger.d('📬 Message ID: ${message.messageId}');
+    AppLogger.d('📬 Title: ${message.notification?.title}');
+    AppLogger.d('📬 Body: ${message.notification?.body}');
+    AppLogger.d('📬 Data: ${message.data}');
+    AppLogger.d('📬 ========================================');
 
     // Show local notification when app is in foreground
     _showLocalNotification(message);
@@ -159,11 +160,11 @@ class NotificationService {
   Future<void> _showLocalNotification(RemoteMessage message) async {
     final notification = message.notification;
     if (notification == null) {
-      print('📬 No notification payload, skipping local notification');
+      AppLogger.d('📬 No notification payload, skipping local notification');
       return;
     }
 
-    print('📬 Showing local notification: ${notification.title}');
+    AppLogger.d('📬 Showing local notification: ${notification.title}');
 
     final androidDetails = AndroidNotificationDetails(
       'booking_notifications',
@@ -198,10 +199,10 @@ class NotificationService {
 
   /// Handle notification tap (from FCM)
   void _handleNotificationTap(RemoteMessage message) {
-    print('📬 ========================================');
-    print('📬 Notification tapped!');
-    print('📬 Data: ${message.data}');
-    print('📬 ========================================');
+    AppLogger.d('📬 ========================================');
+    AppLogger.d('📬 Notification tapped!');
+    AppLogger.d('📬 Data: ${message.data}');
+    AppLogger.d('📬 ========================================');
     
     final data = message.data;
     final type = data['type'];
@@ -212,8 +213,8 @@ class NotificationService {
 
   /// Handle local notification tap
   void _onNotificationTapped(NotificationResponse response) {
-    print('📬 Local notification tapped');
-    print('📬 Payload: ${response.payload}');
+    AppLogger.d('📬 Local notification tapped');
+    AppLogger.d('📬 Payload: ${response.payload}');
     
     // TODO: Parse payload and navigate
   }
@@ -222,38 +223,38 @@ class NotificationService {
   void _navigateBasedOnType(String? type, Map<String, dynamic> data) {
     switch (type) {
       case 'NEW_BOOKING':
-        print('📬 Navigate to booking details: ${data['bookingId']}');
+        AppLogger.d('📬 Navigate to booking details: ${data['bookingId']}');
         // TODO: Implement navigation
         // context.push('/owner/bookings/${data['bookingId']}');
         break;
         
       case 'BOOKING_CANCELLED':
-        print('📬 Navigate to bookings list');
+        AppLogger.d('📬 Navigate to bookings list');
         // TODO: Implement navigation
         // context.push('/owner/bookings');
         break;
         
       case 'BOOKING_STATUS_UPDATE':
-        print('📬 Navigate to my bookings: ${data['bookingId']}');
+        AppLogger.d('📬 Navigate to my bookings: ${data['bookingId']}');
         // TODO: Implement navigation
         // context.push('/client/my-bookings/${data['bookingId']}');
         break;
         
       case 'NEW_REVIEW':
-        print('📬 Navigate to cafe reviews: ${data['cafeId']}');
+        AppLogger.d('📬 Navigate to cafe reviews: ${data['cafeId']}');
         // TODO: Implement navigation
         // context.push('/cafes/${data['cafeId']}?tab=reviews');
         break;
         
       default:
-        print('📬 Unknown notification type: $type');
+        AppLogger.d('📬 Unknown notification type: $type');
     }
   }
 
   /// Unregister FCM token (call on logout)
   Future<void> unregisterToken() async {
     try {
-      print('📬 Unregistering FCM token...');
+      AppLogger.d('📬 Unregistering FCM token...');
       
       await _apiClient.post(
         '/auth/register-fcm-token',
@@ -262,15 +263,15 @@ class NotificationService {
       
       await _messaging.deleteToken();
       
-      print('📬 FCM token unregistered ✓');
+      AppLogger.d('📬 FCM token unregistered ✓');
     } catch (e) {
-      print('📬 Error unregistering token: $e');
+      AppLogger.d('📬 Error unregistering token: $e');
     }
   }
 
   /// Test notification (for debugging)
   Future<void> showTestNotification() async {
-    print('📬 Showing test notification');
+    AppLogger.d('📬 Showing test notification');
     
     final androidDetails = AndroidNotificationDetails(
       'booking_notifications',

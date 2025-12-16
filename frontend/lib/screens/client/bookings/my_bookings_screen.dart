@@ -92,7 +92,12 @@ class MyBookingsScreen extends ConsumerWidget {
             onRefresh: () async => ref.invalidate(myBookingsProvider),
             color: AppColors.neonPurple,
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav
+              ),
               children: [
                 if (upcoming.isNotEmpty) ...[
                   const _SectionHeader(title: 'Upcoming'),

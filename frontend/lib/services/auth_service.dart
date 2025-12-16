@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/constants.dart';
 import '../core/api_client.dart';
 import '../core/firebase_service.dart';
+import '../core/logger.dart';
 import '../models/user_model.dart' as app_models;
 
 /// Authentication Service
@@ -22,7 +23,7 @@ class AuthService {
     String? phone,
   }) async {
     try {
-      print('🔐 [REGISTER] Starting Firebase Auth registration...');
+      AppLogger.d('🔐 [REGISTER] Starting Firebase Auth registration...');
       
       // Create Firebase Auth user (with timeout to prevent hanging)
       final userCredential = await _auth.createUserWithEmailAndPassword(
@@ -35,7 +36,7 @@ class AuthService {
         },
       );
 
-      print('🔐 [REGISTER] Firebase Auth successful!');
+      AppLogger.d('🔐 [REGISTER] Firebase Auth successful!');
 
       final firebaseUser = userCredential.user;
       if (firebaseUser == null) {
@@ -49,11 +50,11 @@ class AuthService {
       await Future.delayed(const Duration(milliseconds: 500));
       
       // Force refresh the token to ensure it's valid
-      print('🔐 [REGISTER] Refreshing Firebase token...');
+      AppLogger.d('🔐 [REGISTER] Refreshing Firebase token...');
       await FirebaseService.refreshToken();
       
       // Create user profile in backend Firestore with retry logic
-      print('🔐 [REGISTER] Creating profile in backend...');
+      AppLogger.d('🔐 [REGISTER] Creating profile in backend...');
       
       ApiResponse<Map<String, dynamic>> profileResponse = ApiResponse.error(message: 'Profile creation not attempted');
       int retryCount = 0;
@@ -75,7 +76,7 @@ class AuthService {
             },
           );
           
-          print('🔐 [REGISTER] Profile creation response: success=${profileResponse.isSuccess}');
+          AppLogger.d('🔐 [REGISTER] Profile creation response: success=${profileResponse.isSuccess}');
           
           if (profileResponse.isSuccess) {
             break; // Success, exit retry loop
@@ -84,12 +85,12 @@ class AuthService {
           // If not successful, retry
           retryCount++;
           if (retryCount < maxRetries) {
-            print('🔐 [REGISTER] Profile creation failed, retrying ($retryCount/$maxRetries)...');
+            AppLogger.w('🔐 [REGISTER] Profile creation failed, retrying ($retryCount/$maxRetries)...');
             await Future.delayed(Duration(seconds: retryCount * 2)); // Exponential backoff
           }
         } catch (e) {
           retryCount++;
-          print('🔐 [REGISTER] Profile creation error: $e (attempt $retryCount/$maxRetries)');
+          AppLogger.e('🔐 [REGISTER] Profile creation error (attempt $retryCount/$maxRetries)', e);
           if (retryCount >= maxRetries) {
             profileResponse = ApiResponse.error(message: e.toString());
             break;
@@ -99,12 +100,12 @@ class AuthService {
       }
 
       if (!profileResponse.isSuccess) {
-        print('🔐 [REGISTER] Profile creation failed after $maxRetries attempts: ${profileResponse.message}');
+        AppLogger.e('🔐 [REGISTER] Profile creation failed after $maxRetries attempts: ${profileResponse.message}');
         
         // Check if profile actually exists before deleting Firebase user
         // (in case the request succeeded but response was lost)
         try {
-          print('🔐 [REGISTER] Checking if profile was created despite error...');
+          AppLogger.d('🔐 [REGISTER] Checking if profile was created despite error...');
           await Future.delayed(const Duration(seconds: 2)); // Wait a bit
           
           final checkResponse = await _apiClient.get<Map<String, dynamic>>(
@@ -112,7 +113,7 @@ class AuthService {
           );
           
           if (checkResponse.isSuccess && checkResponse.data != null) {
-            print('🔐 [REGISTER] Profile exists! Registration actually succeeded.');
+            AppLogger.d('🔐 [REGISTER] Profile exists! Registration actually succeeded.');
             // Profile exists, registration succeeded despite error
             final userData = checkResponse.data!['data']['user'];
             return app_models.AuthResponse(
@@ -122,15 +123,15 @@ class AuthService {
             );
           }
         } catch (e) {
-          print('🔐 [REGISTER] Profile check failed: $e');
+          AppLogger.e('🔐 [REGISTER] Profile check failed', e);
         }
         
         // Profile truly doesn't exist, delete Firebase Auth user
-        print('🔐 [REGISTER] Deleting Firebase Auth user due to profile creation failure');
+        AppLogger.w('🔐 [REGISTER] Deleting Firebase Auth user due to profile creation failure');
         try {
           await firebaseUser.delete();
         } catch (e) {
-          print('🔐 [REGISTER] Failed to delete Firebase user: $e');
+          AppLogger.e('🔐 [REGISTER] Failed to delete Firebase user', e);
         }
         
         return app_models.AuthResponse(
@@ -178,8 +179,8 @@ class AuthService {
     required String password,
   }) async {
     try {
-      print('🔐 [LOGIN] Starting Firebase Auth login...');
-      print('🔐 [LOGIN] Email: $email');
+      AppLogger.d('🔐 [LOGIN] Starting Firebase Auth login...');
+      AppLogger.d('🔐 [LOGIN] Email: $email');
       
       // Sign in with Firebase Auth (with timeout to prevent hanging)
       final userCredential = await _auth.signInWithEmailAndPassword(
@@ -192,27 +193,27 @@ class AuthService {
         },
       );
 
-      print('🔐 [LOGIN] Firebase Auth successful!');
+      AppLogger.d('🔐 [LOGIN] Firebase Auth successful!');
 
       final firebaseUser = userCredential.user;
       if (firebaseUser == null) {
-        print('🔐 [LOGIN] ERROR: Firebase user is null');
+        AppLogger.e('🔐 [LOGIN] ERROR: Firebase user is null');
         return app_models.AuthResponse(
           success: false,
           message: 'Login failed',
         );
       }
 
-      print('🔐 [LOGIN] Firebase UID: ${firebaseUser.uid}');
+      AppLogger.d('🔐 [LOGIN] Firebase UID: ${firebaseUser.uid}');
       
       // Force refresh the token to ensure it's valid
-      print('🔐 [LOGIN] Refreshing Firebase token...');
+      AppLogger.d('🔐 [LOGIN] Refreshing Firebase token...');
       await FirebaseService.refreshToken();
       
       // Wait a moment for token to settle
       await Future.delayed(const Duration(milliseconds: 500));
       
-      print('🔐 [LOGIN] Fetching profile from backend: ${ApiConstants.baseUrl}${ApiConstants.profile}');
+      AppLogger.d('🔐 [LOGIN] Fetching profile from backend: ${ApiConstants.baseUrl}${ApiConstants.profile}');
 
       // Get user profile from backend with retry logic
       ApiResponse<Map<String, dynamic>> response = ApiResponse.error(message: 'Profile fetch not attempted');
@@ -230,14 +231,14 @@ class AuthService {
             },
           );
           
-          print('🔐 [LOGIN] Backend response received: isSuccess=${response.isSuccess}, message=${response.message}');
+          AppLogger.d('🔐 [LOGIN] Backend response received: isSuccess=${response.isSuccess}, message=${response.message}');
           
           if (response.isSuccess && response.data != null) {
             final data = response.data!;
-            print('🔐 [LOGIN] Profile data received: ${data.keys}');
+            AppLogger.d('🔐 [LOGIN] Profile data received: ${data.keys}');
             
             if (data['data'] != null && data['data']['user'] != null) {
-              print('🔐 [LOGIN] Login successful! User role: ${data['data']['user']['role']}');
+              AppLogger.d('🔐 [LOGIN] Login successful! User role: ${data['data']['user']['role']}');
               return app_models.AuthResponse(
                 success: true,
                 message: 'Login successful',
@@ -249,12 +250,12 @@ class AuthService {
           // If profile not found but no error, retry
           retryCount++;
           if (retryCount < maxRetries) {
-            print('🔐 [LOGIN] Profile not found, retrying ($retryCount/$maxRetries)...');
+            AppLogger.w('🔐 [LOGIN] Profile not found, retrying ($retryCount/$maxRetries)...');
             await Future.delayed(Duration(seconds: retryCount * 2));
           }
         } catch (e) {
           retryCount++;
-          print('🔐 [LOGIN] Profile fetch error: $e (attempt $retryCount/$maxRetries)');
+          AppLogger.e('🔐 [LOGIN] Profile fetch error (attempt $retryCount/$maxRetries)', e);
           if (retryCount >= maxRetries) {
             response = ApiResponse.error(message: e.toString());
             break;
@@ -264,7 +265,7 @@ class AuthService {
       }
 
       // Profile fetch failed after retries - sign out and show error
-      print('🔐 [LOGIN] Profile not found in database after $maxRetries attempts.');
+      AppLogger.e('🔐 [LOGIN] Profile not found in database after $maxRetries attempts.');
       await _auth.signOut();
       
       return app_models.AuthResponse(
@@ -272,7 +273,7 @@ class AuthService {
         message: 'Account profile not found. Please register again or contact support.',
       );
     } on firebase_auth.FirebaseAuthException catch (e) {
-      print('🔐 [LOGIN] Firebase Auth ERROR: ${e.code} - ${e.message}');
+      AppLogger.e('🔐 [LOGIN] Firebase Auth ERROR: ${e.code} - ${e.message}', e);
       String message = 'Login failed';
       if (e.code == 'user-not-found') {
         message = 'No user found with this email';
@@ -287,7 +288,7 @@ class AuthService {
       }
       return app_models.AuthResponse(success: false, message: message);
     } catch (e) {
-      print('🔐 [LOGIN] UNEXPECTED ERROR: $e');
+      AppLogger.e('🔐 [LOGIN] UNEXPECTED ERROR', e);
       return app_models.AuthResponse(
         success: false,
         message: e.toString(),
@@ -300,7 +301,7 @@ class AuthService {
     required String role, // 'client' or 'owner'
   }) async {
     try {
-      print('🔐 [GOOGLE_SIGNIN] Starting Google Sign-In with role: $role');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Starting Google Sign-In with role: $role');
       
       // Sign in with Google (handled by FirebaseService)
       final userCredential = await FirebaseService.signInWithGoogle();
@@ -320,20 +321,20 @@ class AuthService {
         );
       }
       
-      print('🔐 [GOOGLE_SIGNIN] Firebase user created: ${firebaseUser.uid}');
-      print('🔐 [GOOGLE_SIGNIN] Email: ${firebaseUser.email}');
-      print('🔐 [GOOGLE_SIGNIN] Display Name: ${firebaseUser.displayName}');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Firebase user created: ${firebaseUser.uid}');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Email: ${firebaseUser.email}');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Display Name: ${firebaseUser.displayName}');
       
       // Check if this is a new user or existing user
       final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
-      print('🔐 [GOOGLE_SIGNIN] Is new user: $isNewUser');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Is new user: $isNewUser');
       
       // Wait for token to settle
       await Future.delayed(const Duration(milliseconds: 500));
       await FirebaseService.refreshToken();
       
       // Send Google Sign-In data to backend
-      print('🔐 [GOOGLE_SIGNIN] Sending to backend...');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Sending to backend...');
       final response = await _apiClient.post<Map<String, dynamic>>(
         '/auth/google-signin',
         data: {
@@ -344,12 +345,12 @@ class AuthService {
         },
       );
       
-      print('🔐 [GOOGLE_SIGNIN] Backend response: ${response.isSuccess}');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] Backend response: ${response.isSuccess}');
       
       if (response.isSuccess && response.data != null) {
         final data = response.data!;
         if (data['data'] != null && data['data']['user'] != null) {
-          print('🔐 [GOOGLE_SIGNIN] Success! User role: ${data['data']['user']['role']}');
+          AppLogger.d('🔐 [GOOGLE_SIGNIN] Success! User role: ${data['data']['user']['role']}');
           return app_models.AuthResponse(
             success: true,
             message: data['message'] ?? 'Sign in successful',
@@ -359,7 +360,7 @@ class AuthService {
       }
       
       // Backend failed, sign out
-      print('🔐 [GOOGLE_SIGNIN] Backend failed, signing out');
+      AppLogger.w('🔐 [GOOGLE_SIGNIN] Backend failed, signing out');
       await FirebaseService.signOut();
       
       return app_models.AuthResponse(
@@ -367,13 +368,13 @@ class AuthService {
         message: response.message ?? 'Failed to complete sign in',
       );
     } on firebase_auth.FirebaseAuthException catch (e) {
-      print('🔐 [GOOGLE_SIGNIN] Firebase Auth ERROR: ${e.code} - ${e.message}');
+      AppLogger.e('🔐 [GOOGLE_SIGNIN] Firebase Auth ERROR: ${e.code} - ${e.message}', e);
       return app_models.AuthResponse(
         success: false,
         message: 'Google Sign-In failed: ${e.message ?? e.code}',
       );
     } catch (e) {
-      print('🔐 [GOOGLE_SIGNIN] UNEXPECTED ERROR: $e');
+      AppLogger.e('🔐 [GOOGLE_SIGNIN] UNEXPECTED ERROR', e);
       return app_models.AuthResponse(
         success: false,
         message: e.toString(),

@@ -5,13 +5,16 @@ import 'package:go_router/go_router.dart';
 import '../../../config/theme.dart';
 import '../../../config/constants.dart';
 import '../../../core/utils.dart';
+import '../../../core/logger.dart';
 import '../../../providers/cafe_provider.dart';
 import '../../../providers/booking_provider.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../services/cafe_service.dart';
 import '../../../services/booking_service.dart';
 import '../../../models/booking_model.dart';
 import '../../../widgets/custom_button.dart';
 import '../../../widgets/loading_widget.dart';
+import '../payment/payment_screen.dart';
 
 /// Slot Selection Screen with Real-Time Availability
 class SlotSelectionScreen extends ConsumerStatefulWidget {
@@ -71,7 +74,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     int closeHour = int.tryParse(closeParts[0]) ?? 22;
     int closeMinute = closeParts.length > 1 ? (int.tryParse(closeParts[1]) ?? 0) : 0;
     
-    print('📅 [GENERATE_SLOTS] Original - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
+    AppLogger.d('📅 [GENERATE_SLOTS] Original - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
     
     // Store original values for validation
     final originalOpenHour = openHour;
@@ -82,7 +85,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     // Add 24 hours to closing hour for calculation
     if (crossesMidnight) {
       closeHour += 24;
-      print('📅 [GENERATE_SLOTS] Closing time is next day, adjusted close hour to: $closeHour');
+      AppLogger.d('📅 [GENERATE_SLOTS] Closing time is next day, adjusted close hour to: $closeHour');
     }
     
     // Round opening minute to nearest 30
@@ -93,7 +96,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       openHour++;
     }
     
-    print('📅 [GENERATE_SLOTS] After rounding - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
+    AppLogger.d('📅 [GENERATE_SLOTS] After rounding - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
     
     // Generate 30-minute slots from opening to closing
     int currentHour = openHour;
@@ -114,15 +117,15 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       
       // Safety check to prevent infinite loop (max 48 slots = 24 hours)
       if (slots.length > 48) {
-        print('📅 [GENERATE_SLOTS] WARNING: Reached max slot limit (48)');
+        AppLogger.d('📅 [GENERATE_SLOTS] WARNING: Reached max slot limit (48)');
         break;
       }
     }
     
-    print('📅 [GENERATE_SLOTS] Generated ${slots.length} slots');
+    AppLogger.d('📅 [GENERATE_SLOTS] Generated ${slots.length} slots');
     if (slots.isNotEmpty) {
-      print('📅 [GENERATE_SLOTS] First slot: ${slots.first}, Last slot: ${slots.last}');
-      print('📅 [GENERATE_SLOTS] Crosses midnight: $crossesMidnight');
+      AppLogger.d('📅 [GENERATE_SLOTS] First slot: ${slots.first}, Last slot: ${slots.last}');
+      AppLogger.d('📅 [GENERATE_SLOTS] Crosses midnight: $crossesMidnight');
     }
     
     setState(() {
@@ -133,24 +136,24 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   /// Load cafe hours for generating time slots
   Future<void> _loadAvailability() async {
     try {
-      print('📅 [SLOT_SELECTION] Loading availability...');
+      AppLogger.d('📅 [SLOT_SELECTION] Loading availability...');
       final dateStr = DateTimeUtils.formatDateForApi(_selectedDate);
-      print('📅 [SLOT_SELECTION] Date formatted: $dateStr');
+      AppLogger.d('📅 [SLOT_SELECTION] Date formatted: $dateStr');
       
       // Fetch cafe info to get opening/closing times
       final cafeService = ref.read(cafeServiceProvider);
-      print('📅 [SLOT_SELECTION] Calling getCafeAvailability...');
+      AppLogger.d('📅 [SLOT_SELECTION] Calling getCafeAvailability...');
       final availability = await cafeService.getCafeAvailability(
         widget.cafeId,
         dateStr,
       );
       
-      print('📅 [SLOT_SELECTION] Availability response: ${availability != null ? "received" : "null"}');
+      AppLogger.d('📅 [SLOT_SELECTION] Availability response: ${availability != null ? "received" : "null"}');
       
       if (mounted && availability != null) {
-        print('📅 [SLOT_SELECTION] Opening time: ${availability.openingTime}');
-        print('📅 [SLOT_SELECTION] Closing time: ${availability.closingTime}');
-        print('📅 [SLOT_SELECTION] Total stations: ${availability.pc?.totalStations}');
+        AppLogger.d('📅 [SLOT_SELECTION] Opening time: ${availability.openingTime}');
+        AppLogger.d('📅 [SLOT_SELECTION] Closing time: ${availability.closingTime}');
+        AppLogger.d('📅 [SLOT_SELECTION] Total stations: ${availability.pc?.totalStations}');
         
         setState(() {
           _availability = availability;
@@ -158,19 +161,19 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
           // Update time slots based on cafe operating hours
           if (availability.openingTime.isNotEmpty && 
               availability.closingTime.isNotEmpty) {
-            print('📅 [SLOT_SELECTION] Generating time slots...');
+            AppLogger.d('📅 [SLOT_SELECTION] Generating time slots...');
             _generateTimeSlots(availability.openingTime, availability.closingTime);
-            print('📅 [SLOT_SELECTION] Generated ${_timeSlots.length} time slots');
+            AppLogger.d('📅 [SLOT_SELECTION] Generated ${_timeSlots.length} time slots');
           } else {
-            print('📅 [SLOT_SELECTION] ERROR: Empty opening/closing times!');
+            AppLogger.d('📅 [SLOT_SELECTION] ERROR: Empty opening/closing times!');
           }
         });
       } else {
-        print('📅 [SLOT_SELECTION] ERROR: Availability is null or widget unmounted!');
+        AppLogger.d('📅 [SLOT_SELECTION] ERROR: Availability is null or widget unmounted!');
       }
     } catch (e, stackTrace) {
-      print('📅 [SLOT_SELECTION] ERROR loading cafe hours: $e');
-      print('📅 [SLOT_SELECTION] Stack trace: $stackTrace');
+      AppLogger.d('📅 [SLOT_SELECTION] ERROR loading cafe hours: $e');
+      AppLogger.d('📅 [SLOT_SELECTION] Stack trace: $stackTrace');
       debugPrint('Error loading cafe hours: $e');
     }
   }
@@ -345,24 +348,24 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   }
 
   Future<void> _confirmBooking() async {
-    print('🎫 ========================================');
-    print('🎫 [CONFIRM_BOOKING] METHOD CALLED!');
-    print('🎫 Start Time: $_startTime');
-    print('🎫 End Time: $_endTime');
-    print('🎫 Selected Station: $_selectedStation');
-    print('🎫 Available Count: $_availableCount');
-    print('🎫 ========================================');
+    AppLogger.d('🎫 ========================================');
+    AppLogger.d('🎫 [CONFIRM_BOOKING] METHOD CALLED!');
+    AppLogger.d('🎫 Start Time: $_startTime');
+    AppLogger.d('🎫 End Time: $_endTime');
+    AppLogger.d('🎫 Selected Station: $_selectedStation');
+    AppLogger.d('🎫 Available Count: $_availableCount');
+    AppLogger.d('🎫 ========================================');
     
     if (_startTime == null || _endTime == null) {
-      print('🎫 [CONFIRM_BOOKING] ERROR: Missing time slot');
+      AppLogger.d('🎫 [CONFIRM_BOOKING] ERROR: Missing time slot');
       SnackbarUtils.showError(context, 'Please select a time slot');
       return;
     }
 
     if (_selectedStation == null || _availableCount == 0) {
-      print('🎫 [CONFIRM_BOOKING] ERROR: No station selected or no availability');
-      print('🎫 Selected Station: $_selectedStation');
-      print('🎫 Available Count: $_availableCount');
+      AppLogger.d('🎫 [CONFIRM_BOOKING] ERROR: No station selected or no availability');
+      AppLogger.d('🎫 Selected Station: $_selectedStation');
+      AppLogger.d('🎫 Available Count: $_availableCount');
       SnackbarUtils.showError(context, 'No stations available for this time slot');
       return;
     }
@@ -377,15 +380,15 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     try {
       final bookingService = ref.read(bookingServiceProvider);
 
-      print('🎫 ========================================');
-      print('🎫 [SLOT_SELECTION] Creating booking request...');
-      print('🎫 Cafe ID: ${widget.cafeId}');
-      print('🎫 Station Type: $_stationType');
-      print('🎫 Station Number: $_selectedStation');
-      print('🎫 Date: ${DateTimeUtils.formatDateForApi(_selectedDate)}');
-      print('🎫 Start Time: $_startTime');
-      print('🎫 End Time: $_endTime');
-      print('🎫 ========================================');
+      AppLogger.d('🎫 ========================================');
+      AppLogger.d('🎫 [SLOT_SELECTION] Creating booking request...');
+      AppLogger.d('🎫 Cafe ID: ${widget.cafeId}');
+      AppLogger.d('🎫 Station Type: $_stationType');
+      AppLogger.d('🎫 Station Number: $_selectedStation');
+      AppLogger.d('🎫 Date: ${DateTimeUtils.formatDateForApi(_selectedDate)}');
+      AppLogger.d('🎫 Start Time: $_startTime');
+      AppLogger.d('🎫 End Time: $_endTime');
+      AppLogger.d('🎫 ========================================');
 
       // Create booking with auto-assigned station
       final response = await bookingService.createBooking(
@@ -400,36 +403,40 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         ),
       );
 
-      print('🎫 [SLOT_SELECTION] Response received: ${response.success}');
-      print('🎫 [SLOT_SELECTION] Message: ${response.message}');
+      AppLogger.d('🎫 [SLOT_SELECTION] Response received: ${response.success}');
+      AppLogger.d('🎫 [SLOT_SELECTION] Message: ${response.message}');
 
       if (!mounted) return;
 
       setState(() => _isLoading = false);
 
       if (response.success && response.booking != null) {
-        print('🎫 [SLOT_SELECTION] Booking successful! Navigating to confirmation...');
-        // Navigate to confirmation
-        context.go(
-          '/client/booking/confirm',
-          extra: {
-            'booking': response.booking!.toJson(),
-            'billing': response.billing,
-          },
-        );
+        AppLogger.d('🎫 [SLOT_SELECTION] Booking created! Navigating to payment...');
+        // Navigate to payment screen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PaymentScreen(
+                booking: response.booking!,
+                amount: response.booking!.totalAmount,
+              ),
+            ),
+          );
+        }
       } else {
         // Show error and stay on page
-        print('🎫 [SLOT_SELECTION] Booking failed: ${response.message}');
+        AppLogger.d('🎫 [SLOT_SELECTION] Booking failed: ${response.message}');
         SnackbarUtils.showError(context, response.message);
         // Refresh availability in case it changed (but don't await)
         _updateAvailableCount();
       }
     } catch (e, stackTrace) {
-      print('🎫 ========================================');
-      print('🎫 [SLOT_SELECTION] BOOKING ERROR!');
-      print('🎫 Error: $e');
-      print('🎫 Stack trace: $stackTrace');
-      print('🎫 ========================================');
+      AppLogger.d('🎫 ========================================');
+      AppLogger.d('🎫 [SLOT_SELECTION] BOOKING ERROR!');
+      AppLogger.d('🎫 Error: $e');
+      AppLogger.d('🎫 Stack trace: $stackTrace');
+      AppLogger.d('🎫 ========================================');
       if (mounted) {
         setState(() => _isLoading = false);
         SnackbarUtils.showError(context, 'Booking failed: $e');
@@ -461,21 +468,37 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     
     final totalAmount = hourlyRate * durationHours;
 
+    // Check if booking is within 1 hour (for refund warning)
+    final bookingDateTime = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      int.parse(_startTime!.split(':')[0]),
+      int.parse(_startTime!.split(':')[1]),
+    );
+    final now = DateTime.now();
+    final hoursUntilBooking = bookingDateTime.difference(now).inHours;
+    final isWithinOneHour = hoursUntilBooking < 1;
+
     // Show confirmation bottom sheet
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
         decoration: const BoxDecoration(
           color: AppColors.surfaceDark,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Header
             Row(
               children: [
@@ -601,23 +624,52 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Refund Policy Warning (if booking is within 1 hour)
+            if (isWithinOneHour)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No Refund Policy: This booking is within 1 hour. If you cancel, you will not receive any refund.',
+                        style: TextStyle(
+                          color: AppColors.error,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Payment Note
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.warning.withOpacity(0.1),
+                color: AppColors.cyberCyan.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                border: Border.all(color: AppColors.cyberCyan.withOpacity(0.3)),
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.info_outline, color: AppColors.warning, size: 18),
+                  Icon(Icons.payment, color: AppColors.cyberCyan, size: 18),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Pay at the cafe when you arrive',
+                      'You will be redirected to secure payment gateway',
                       style: TextStyle(
-                        color: AppColors.warning,
+                        color: AppColors.cyberCyan,
                         fontSize: 12,
                       ),
                     ),
@@ -640,14 +692,15 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                 Expanded(
                   flex: 2,
                   child: GlowButton(
-                    text: 'CONFIRM BOOKING',
+                    text: 'PROCEED TO PAYMENT',
                     onPressed: () => Navigator.of(context).pop(true),
                   ),
                 ),
               ],
             ),
             SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
-          ],
+            ],
+          ),
         ),
       ),
     );

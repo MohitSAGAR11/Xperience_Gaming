@@ -140,7 +140,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       }
 
                       return ListView.builder(
-                        padding: const EdgeInsets.all(16),
+                        padding: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 16,
+                          bottom: MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav
+                        ),
                         itemCount: cafes.length,
                         itemBuilder: (context, index) {
                           final cafe = cafes[index];
@@ -153,7 +158,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       );
                     },
                     loading: () => ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 16,
+                        bottom: MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav
+                      ),
                       itemCount: 3,
                       itemBuilder: (context, index) => const ShimmerCafeCard(),
                     ),

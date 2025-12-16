@@ -363,119 +363,128 @@ class _AddReviewDialogState extends ConsumerState<AddReviewDialog> {
     final isEditing = widget.existingReview != null;
     
     return Dialog(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isEditing ? 'Edit Review' : 'Write a Review',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                widget.cafeName,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Rating
-              const Text(
-                'Your Rating',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: RatingBar.builder(
-                  initialRating: _rating,
-                  minRating: 1,
-                  direction: Axis.horizontal,
-                  allowHalfRating: false,
-                  itemCount: 5,
-                  itemSize: 40,
-                  itemPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  itemBuilder: (context, _) => const Icon(
-                    Icons.star,
-                    color: AppColors.cyberCyan,
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.9,
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isEditing ? 'Edit Review' : 'Write a Review',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
                   ),
-                  onRatingUpdate: (rating) {
-                    setState(() => _rating = rating);
+                ),
+                Text(
+                  widget.cafeName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Rating
+                const Text(
+                  'Your Rating',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: RatingBar.builder(
+                    initialRating: _rating,
+                    minRating: 1,
+                    direction: Axis.horizontal,
+                    allowHalfRating: false,
+                    itemCount: 5,
+                    itemSize: 40,
+                    itemPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    itemBuilder: (context, _) => const Icon(
+                      Icons.star,
+                      color: AppColors.cyberCyan,
+                    ),
+                    onRatingUpdate: (rating) {
+                      setState(() => _rating = rating);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Title
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Title (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLength: 100,
+                  validator: (value) {
+                    if (value != null && value.length > 100) {
+                      return 'Title is too long';
+                    }
+                    return null;
                   },
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-              // Title
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Title (optional)',
-                  border: OutlineInputBorder(),
-                ),
-                maxLength: 100,
-                validator: (value) {
-                  if (value != null && value.length > 100) {
-                    return 'Title is too long';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Comment
-              TextFormField(
-                controller: _commentController,
-                decoration: const InputDecoration(
-                  labelText: 'Your Review (optional)',
-                  border: OutlineInputBorder(),
-                  alignLabelWithHint: true,
-                  hintText: 'Share your experience...',
-                ),
-                maxLines: 5,
-                maxLength: 1000,
-                validator: (value) {
-                  // Comment is optional - no validation required
-                  if (value != null && value.length > 1000) {
-                    return 'Comment is too long';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // Buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                // Comment
+                TextFormField(
+                  controller: _commentController,
+                  decoration: const InputDecoration(
+                    labelText: 'Your Review (optional)',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                    hintText: 'Share your experience...',
                   ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: _isSubmitting ? null : _submitReview,
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Submit Review'),
-                  ),
-                ],
-              ),
-            ],
+                  maxLines: 5,
+                  maxLength: 1000,
+                  validator: (value) {
+                    // Comment is optional - no validation required
+                    if (value != null && value.length > 1000) {
+                      return 'Comment is too long';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+
+                // Buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitReview,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Submit Review'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

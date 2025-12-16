@@ -12,8 +12,8 @@ class ApiConstants {
   // 3. Update baseUrl below with YOUR IP
   // 4. Hot reload/restart app
   //
-  // Current IP: 192.168.11.212 (updated automatically)
-  static const String baseUrl = 'http://192.168.11.212:5000/api';
+  // Current IP: 10.10.6.96 (updated automatically)
+  static const String baseUrl = 'http://10.10.6.96:5000/api';
   
   // Auth Endpoints
   // Note: register/login are handled by Firebase Auth, backend endpoints are:
@@ -32,6 +32,12 @@ class ApiConstants {
   static const String bookings = '/bookings';
   static const String myBookings = '/bookings/my-bookings';
   static const String checkAvailability = '/bookings/check-availability';
+  
+  // Payment Endpoints
+  static const String payments = '/payments';
+  static const String createPayment = '/payments/create-payment';
+  static const String refund = '/payments'; // /payments/:bookingId/refund
+  static const String refundStatus = '/payments'; // /payments/:bookingId/refund-status
 }
 
 /// App-wide Constants
@@ -61,7 +67,9 @@ class AppConstants {
   
   // Payment Status
   static const String paymentUnpaid = 'unpaid';
+  static const String paymentPending = 'pending';
   static const String paymentPaid = 'paid';
+  static const String paymentFailed = 'failed';
   static const String paymentRefunded = 'refunded';
   
   // Default Values

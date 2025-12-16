@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
 import 'firebase_service.dart';
+import 'logger.dart';
 
 /// Dio HTTP Client Provider
 final dioProvider = Provider<Dio>((ref) {
@@ -19,19 +21,40 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
+  // Token cache - shared across all requests
+  String? _cachedToken;
+  DateTime? _tokenExpiry;
+
   // Add interceptors
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // Add Firebase ID token to requests
-        print('🌐 [API_CLIENT] Getting Firebase token...');
-        final token = await FirebaseService.getIdToken();
-        if (token != null) {
-          print('🌐 [API_CLIENT] Token obtained: ${token.substring(0, 20)}...');
-          options.headers['Authorization'] = 'Bearer $token';
-          print('🌐 [API_CLIENT] Authorization header set');
-        } else {
-          print('🌐 [API_CLIENT] WARNING: No token available!');
+        // Add Firebase ID token to requests with caching
+        try {
+          // Refresh token if expired or not cached
+          if (_cachedToken == null || 
+              _tokenExpiry == null || 
+              DateTime.now().isAfter(_tokenExpiry!)) {
+            AppLogger.d('🌐 [API_CLIENT] Getting Firebase token...');
+            _cachedToken = await FirebaseService.getIdToken();
+            // Cache token for 50 minutes (tokens expire in ~1 hour)
+            _tokenExpiry = DateTime.now().add(const Duration(minutes: 50));
+            
+            if (_cachedToken != null) {
+              AppLogger.d('🌐 [API_CLIENT] Token obtained: ${_cachedToken!.substring(0, 20)}...');
+            } else {
+              AppLogger.w('🌐 [API_CLIENT] WARNING: No token available!');
+            }
+          } else {
+            AppLogger.d('🌐 [API_CLIENT] Using cached token');
+          }
+          
+          if (_cachedToken != null) {
+            options.headers['Authorization'] = 'Bearer $_cachedToken';
+            AppLogger.d('🌐 [API_CLIENT] Authorization header set');
+          }
+        } catch (e) {
+          AppLogger.e('🌐 [API_CLIENT] Error getting token', e);
         }
         return handler.next(options);
       },
@@ -41,6 +64,10 @@ final dioProvider = Provider<Dio>((ref) {
       onError: (error, handler) async {
         // Handle 401 - Token expired or invalid
         if (error.response?.statusCode == 401) {
+          // Clear cached token on 401
+          _cachedToken = null;
+          _tokenExpiry = null;
+          AppLogger.w('🌐 [API_CLIENT] Token expired (401), clearing cache');
           // Sign out from Firebase Auth
           await FirebaseService.auth.signOut();
           // Navigation to login will be handled by the auth state
@@ -50,14 +77,16 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
 
-  // Add logging in debug mode
-  dio.interceptors.add(
-    LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-      error: true,
-    ),
-  );
+  // Add logging in debug mode only
+  if (kDebugMode) {
+    dio.interceptors.add(
+      LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        error: true,
+      ),
+    );
+  }
 
   return dio;
 });
@@ -75,25 +104,24 @@ class ApiClient {
     T Function(dynamic)? fromJson,
   }) async {
     try {
-      print('🌐 [API] GET request to: ${_dio.options.baseUrl}$path');
+      AppLogger.d('🌐 [API] GET request to: ${_dio.options.baseUrl}$path');
       final response = await _dio.get(
         path,
         queryParameters: queryParameters,
       );
-      print('🌐 [API] GET response: ${response.statusCode}');
+      AppLogger.d('🌐 [API] GET response: ${response.statusCode}');
       return ApiResponse.success(
         data: fromJson != null ? fromJson(response.data) : response.data,
         statusCode: response.statusCode,
       );
     } on DioException catch (e) {
-      print('🌐 [API] GET DioException: ${e.type} - ${e.message}');
-      print('🌐 [API] GET Error details: ${e.error}');
+      AppLogger.e('🌐 [API] GET DioException: ${e.type} - ${e.message}', e.error);
       return ApiResponse.error(
         message: _handleError(e),
         statusCode: e.response?.statusCode,
       );
     } catch (e) {
-      print('🌐 [API] GET unexpected error: $e');
+      AppLogger.e('🌐 [API] GET unexpected error', e);
       return ApiResponse.error(message: e.toString());
     }
   }
@@ -106,26 +134,25 @@ class ApiClient {
     T Function(dynamic)? fromJson,
   }) async {
     try {
-      print('🌐 [API] POST request to: ${_dio.options.baseUrl}$path');
+      AppLogger.d('🌐 [API] POST request to: ${_dio.options.baseUrl}$path');
       final response = await _dio.post(
         path,
         data: data,
         queryParameters: queryParameters,
       );
-      print('🌐 [API] POST response: ${response.statusCode}');
+      AppLogger.d('🌐 [API] POST response: ${response.statusCode}');
       return ApiResponse.success(
         data: fromJson != null ? fromJson(response.data) : response.data,
         statusCode: response.statusCode,
       );
     } on DioException catch (e) {
-      print('🌐 [API] POST DioException: ${e.type} - ${e.message}');
-      print('🌐 [API] POST Error details: ${e.error}');
+      AppLogger.e('🌐 [API] POST DioException: ${e.type} - ${e.message}', e.error);
       return ApiResponse.error(
         message: _handleError(e),
         statusCode: e.response?.statusCode,
       );
     } catch (e) {
-      print('🌐 [API] POST unexpected error: $e');
+      AppLogger.e('🌐 [API] POST unexpected error', e);
       return ApiResponse.error(message: e.toString());
     }
   }

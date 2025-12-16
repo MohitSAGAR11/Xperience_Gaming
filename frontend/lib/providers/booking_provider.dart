@@ -9,18 +9,24 @@ final myBookingsProvider = FutureProvider.autoDispose<MyBookingsResponse>((ref) 
   return await bookingService.getMyBookings();
 });
 
-/// Upcoming Bookings Provider (independent, no circular dependency)
-final upcomingBookingsProvider = FutureProvider.autoDispose<List<Booking>>((ref) async {
-  final bookingService = ref.watch(bookingServiceProvider);
-  final response = await bookingService.getMyBookings();
-  return response.categorized?.upcoming ?? [];
+/// Upcoming Bookings Provider (derived from myBookingsProvider to avoid duplicate API calls)
+final upcomingBookingsProvider = Provider<List<Booking>>((ref) {
+  final bookingsAsync = ref.watch(myBookingsProvider);
+  return bookingsAsync.when(
+    data: (response) => response.categorized?.upcoming ?? [],
+    loading: () => [],
+    error: (_, __) => [],
+  );
 });
 
-/// Past Bookings Provider (independent, no circular dependency)
-final pastBookingsProvider = FutureProvider.autoDispose<List<Booking>>((ref) async {
-  final bookingService = ref.watch(bookingServiceProvider);
-  final response = await bookingService.getMyBookings();
-  return response.categorized?.past ?? [];
+/// Past Bookings Provider (derived from myBookingsProvider to avoid duplicate API calls)
+final pastBookingsProvider = Provider<List<Booking>>((ref) {
+  final bookingsAsync = ref.watch(myBookingsProvider);
+  return bookingsAsync.when(
+    data: (response) => response.categorized?.past ?? [],
+    loading: () => [],
+    error: (_, __) => [],
+  );
 });
 
 /// Single Booking Provider

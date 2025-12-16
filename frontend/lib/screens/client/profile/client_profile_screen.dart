@@ -22,7 +22,12 @@ class ClientProfileScreen extends ConsumerWidget {
         title: const Text('Profile'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav
+        ),
         child: Column(
           children: [
             // Avatar

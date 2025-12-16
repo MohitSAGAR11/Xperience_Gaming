@@ -6,6 +6,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../core/api_client.dart';
 import '../core/firebase_service.dart';
+import '../core/logger.dart';
 import '../config/constants.dart';
 
 /// Image Upload Service
@@ -20,7 +21,7 @@ class ImageUploadService {
     File imageFile,
   ) async {
     try {
-      print('📸 Uploading image for cafe: $cafeId');
+      AppLogger.d('📸 Uploading image for cafe: $cafeId');
 
       // Get auth token from Firebase
       final token = await FirebaseService.getIdToken();
@@ -53,10 +54,10 @@ class ImageUploadService {
         contentType = 'image/jpeg';
       }
       
-      print('📸 File path: ${imageFile.path}');
-      print('📸 File extension: $extension');
-      print('📸 Content type: $contentType');
-      print('📸 File size: $length bytes');
+      AppLogger.d('📸 File path: ${imageFile.path}');
+      AppLogger.d('📸 File extension: $extension');
+      AppLogger.d('📸 Content type: $contentType');
+      AppLogger.d('📸 File size: $length bytes');
       
       final multipartFile = http.MultipartFile(
         'image',
@@ -67,14 +68,14 @@ class ImageUploadService {
       );
       request.files.add(multipartFile);
 
-      print('📸 Sending request...');
+      AppLogger.d('📸 Sending request...');
 
       // Send request
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
-      print('📸 Response status: ${response.statusCode}');
-      print('📸 Response body: ${response.body}');
+      AppLogger.d('📸 Response status: ${response.statusCode}');
+      AppLogger.d('📸 Response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = json.decode(response.body);
@@ -87,7 +88,7 @@ class ImageUploadService {
         );
       }
     } catch (e) {
-      print('📸 Upload error: $e');
+      AppLogger.d('📸 Upload error: $e');
       return ImageUploadResponse(
         success: false,
         message: 'Error uploading image: $e',
@@ -98,7 +99,7 @@ class ImageUploadService {
   /// Delete cafe image
   Future<bool> deleteCafeImage(String cafeId, String imageUrl) async {
     try {
-      print('📸 Deleting image: $imageUrl');
+      AppLogger.d('📸 Deleting image: $imageUrl');
 
       // Get auth token from Firebase
       final token = await FirebaseService.getIdToken();
@@ -117,11 +118,11 @@ class ImageUploadService {
         body: json.encode({'imageUrl': imageUrl}),
       );
 
-      print('📸 Delete response status: ${response.statusCode}');
+      AppLogger.d('📸 Delete response status: ${response.statusCode}');
 
       return response.statusCode == 200;
     } catch (e) {
-      print('📸 Delete error: $e');
+      AppLogger.d('📸 Delete error: $e');
       return false;
     }
   }

@@ -16,7 +16,17 @@ class Booking {
   final double hourlyRate;
   final double totalAmount;
   final String status; // 'pending', 'confirmed', 'cancelled', 'completed'
-  final String paymentStatus; // 'unpaid', 'paid', 'refunded'
+  final String paymentStatus; // 'unpaid', 'pending', 'paid', 'failed', 'refunded'
+  final String? paymentTransactionId; // PayU txnid
+  final String? paymentId; // PayU mihpayid
+  final String? paymentHash; // PayU hash
+  final String? paymentMethod; // 'payu', 'cash', etc.
+  final DateTime? paidAt;
+  final String? refundId;
+  final double? refundAmount;
+  final String? refundStatus; // 'pending', 'processed', 'failed', 'not_eligible'
+  final DateTime? refundedAt;
+  final String? refundReason;
   final String? notes;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -38,6 +48,16 @@ class Booking {
     required this.totalAmount,
     required this.status,
     required this.paymentStatus,
+    this.paymentTransactionId,
+    this.paymentId,
+    this.paymentHash,
+    this.paymentMethod,
+    this.paidAt,
+    this.refundId,
+    this.refundAmount,
+    this.refundStatus,
+    this.refundedAt,
+    this.refundReason,
     this.notes,
     required this.createdAt,
     required this.updatedAt,
@@ -61,6 +81,16 @@ class Booking {
       totalAmount: _parseDouble(json['totalAmount']),
       status: json['status'] ?? 'pending',
       paymentStatus: json['paymentStatus'] ?? 'unpaid',
+      paymentTransactionId: json['paymentTransactionId'],
+      paymentId: json['paymentId'],
+      paymentHash: json['paymentHash'],
+      paymentMethod: json['paymentMethod'],
+      paidAt: json['paidAt'] != null ? _parseDateTime(json['paidAt']) : null,
+      refundId: json['refundId'],
+      refundAmount: json['refundAmount'] != null ? _parseDouble(json['refundAmount']) : null,
+      refundStatus: json['refundStatus'],
+      refundedAt: json['refundedAt'] != null ? _parseDateTime(json['refundedAt']) : null,
+      refundReason: json['refundReason'],
       notes: json['notes'],
       createdAt: _parseDateTime(json['createdAt']),
       updatedAt: _parseDateTime(json['updatedAt']),

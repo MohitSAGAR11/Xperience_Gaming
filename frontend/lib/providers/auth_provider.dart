@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../config/constants.dart';
 import '../core/storage.dart';
 import '../core/firebase_service.dart';
+import '../core/logger.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
@@ -64,14 +65,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       FirebaseService.authStateChanges.listen((firebaseUser) async {
         // Skip if we're in the middle of registration or already loading
         if (_isRegistering || state.isLoading) {
-          print('🔐 [AUTH_LISTENER] Skipping - isRegistering=$_isRegistering, isLoading=${state.isLoading}');
+          AppLogger.d('🔐 [AUTH_LISTENER] Skipping - isRegistering=$_isRegistering, isLoading=${state.isLoading}');
           return;
         }
-        print('🔐 [AUTH_LISTENER] Auth state changed: user=${firebaseUser?.uid ?? "null"}');
+        AppLogger.d('🔐 [AUTH_LISTENER] Auth state changed: user=${firebaseUser?.uid ?? "null"}');
         
         if (firebaseUser == null) {
           // User signed out - clear state
-          print('🔐 [AUTH_LISTENER] User signed out, clearing state');
+          AppLogger.d('🔐 [AUTH_LISTENER] User signed out, clearing state');
           await _storage.clearAll();
           state = AuthState(isLoading: false);
         }
@@ -82,21 +83,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Check current Firebase Auth state
       final firebaseUser = FirebaseService.currentUser;
       if (firebaseUser != null) {
-        print('🔐 [AUTH_INIT] Firebase user found: ${firebaseUser.uid}');
-        print('🔐 [AUTH_INIT] Fetching profile from backend...');
+        AppLogger.d('🔐 [AUTH_INIT] Firebase user found: ${firebaseUser.uid}');
+        AppLogger.d('🔐 [AUTH_INIT] Fetching profile from backend...');
         
         // Add timeout to prevent hanging
         final response = await _authService.getProfile().timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            print('🔐 [AUTH_INIT] Profile fetch timed out, signing out...');
+            AppLogger.w('🔐 [AUTH_INIT] Profile fetch timed out, signing out...');
             FirebaseService.auth.signOut();
             throw Exception('Profile fetch timed out');
           },
         );
         
         if (response.success && response.user != null) {
-          print('🔐 [AUTH_INIT] Profile fetched successfully');
+          AppLogger.d('🔐 [AUTH_INIT] Profile fetched successfully');
           await _storage.saveUser(response.user!);
           await _storage.saveRole(response.user!.role);
           state = AuthState(
@@ -110,17 +111,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
         } else {
           // Profile not found - user exists in Firebase but not in our DB
           // Sign them out to allow fresh registration
-          print('🔐 [AUTH_INIT] Profile not found in backend, signing out Firebase user');
+          AppLogger.w('🔐 [AUTH_INIT] Profile not found in backend, signing out Firebase user');
           await FirebaseService.auth.signOut();
           await _storage.clearAll();
           state = AuthState(isLoading: false);
         }
       } else {
-        print('🔐 [AUTH_INIT] No Firebase user found');
+        AppLogger.d('🔐 [AUTH_INIT] No Firebase user found');
         state = AuthState(isLoading: false);
       }
     } catch (e) {
-      print('🔐 [AUTH_INIT] Error: $e');
+      AppLogger.e('🔐 [AUTH_INIT] Error', e);
       await FirebaseService.auth.signOut();
       await _storage.clearAll();
       state = AuthState(isLoading: false, error: e.toString());
@@ -230,9 +231,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       try {
         final notificationService = _ref.read(notificationServiceProvider);
         await notificationService.unregisterToken();
-        print('📬 [AUTH] Notification token unregistered');
+        AppLogger.d('📬 [AUTH] Notification token unregistered');
       } catch (e) {
-        print('📬 [AUTH] Error unregistering notification token: $e');
+        AppLogger.e('📬 [AUTH] Error unregistering notification token', e);
         // Don't fail logout if notification unregister fails
       }
       
@@ -332,12 +333,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Initialize notifications (called after successful authentication)
   Future<void> _initializeNotifications() async {
     try {
-      print('📬 [AUTH] Initializing notifications...');
+      AppLogger.d('📬 [AUTH] Initializing notifications...');
       final notificationService = _ref.read(notificationServiceProvider);
       await notificationService.initialize();
-      print('📬 [AUTH] Notifications initialized successfully');
+      AppLogger.d('📬 [AUTH] Notifications initialized successfully');
     } catch (e) {
-      print('📬 [AUTH] Error initializing notifications: $e');
+      AppLogger.e('📬 [AUTH] Error initializing notifications', e);
       // Don't fail authentication if notifications fail
     }
   }

@@ -48,45 +48,56 @@ class _ClientBottomNav extends StatelessWidget {
         ],
       ),
       child: SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _NavItem(
-                icon: Iconsax.home,
-                activeIcon: Iconsax.home_15,
-                label: 'Home',
-                isSelected: selectedIndex == 0,
-                onTap: () => context.go(Routes.clientHome),
+              Expanded(
+                child: _NavItem(
+                  icon: Iconsax.home,
+                  activeIcon: Iconsax.home_15,
+                  label: 'Home',
+                  isSelected: selectedIndex == 0,
+                  onTap: () => context.go(Routes.clientHome),
+                ),
               ),
-              _NavItem(
-                icon: Iconsax.search_normal,
-                activeIcon: Iconsax.search_normal_1,
-                label: 'Search',
-                isSelected: selectedIndex == 1,
-                onTap: () => context.go(Routes.search),
+              Expanded(
+                child: _NavItem(
+                  icon: Iconsax.search_normal,
+                  activeIcon: Iconsax.search_normal_1,
+                  label: 'Search',
+                  isSelected: selectedIndex == 1,
+                  onTap: () => context.go(Routes.search),
+                ),
               ),
-              _NavItem(
-                icon: Iconsax.people,
-                activeIcon: Iconsax.people5,
-                label: 'Community',
-                isSelected: selectedIndex == 2,
-                onTap: () => context.go(Routes.community),
+              Expanded(
+                child: _NavItem(
+                  icon: Iconsax.people,
+                  activeIcon: Iconsax.people5,
+                  label: 'Community',
+                  isSelected: selectedIndex == 2,
+                  onTap: () => context.go(Routes.community),
+                ),
               ),
-              _NavItem(
-                icon: Iconsax.calendar,
-                activeIcon: Iconsax.calendar_1,
-                label: 'Bookings',
-                isSelected: selectedIndex == 3,
-                onTap: () => context.go(Routes.myBookings),
+              Expanded(
+                child: _NavItem(
+                  icon: Iconsax.calendar,
+                  activeIcon: Iconsax.calendar_1,
+                  label: 'Bookings',
+                  isSelected: selectedIndex == 3,
+                  onTap: () => context.go(Routes.myBookings),
+                ),
               ),
-              _NavItem(
-                icon: Iconsax.user,
-                activeIcon: Iconsax.user,
-                label: 'Profile',
-                isSelected: selectedIndex == 4,
-                onTap: () => context.go(Routes.clientProfile),
+              Expanded(
+                child: _NavItem(
+                  icon: Iconsax.user,
+                  activeIcon: Iconsax.user,
+                  label: 'Profile',
+                  isSelected: selectedIndex == 4,
+                  onTap: () => context.go(Routes.clientProfile),
+                ),
               ),
             ],
           ),
@@ -118,7 +129,7 @@ class _NavItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         decoration: isSelected
             ? BoxDecoration(
                 color: AppColors.neonPurple.withOpacity(0.15),
@@ -127,19 +138,25 @@ class _NavItem extends StatelessWidget {
             : null,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               isSelected ? activeIcon : icon,
               color: isSelected ? AppColors.neonPurple : AppColors.textMuted,
-              size: 24,
+              size: 22,
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? AppColors.neonPurple : AppColors.textMuted,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? AppColors.neonPurple : AppColors.textMuted,
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

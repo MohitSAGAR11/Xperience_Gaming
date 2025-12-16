@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
 import '../core/api_client.dart';
+import '../core/logger.dart';
 import '../models/cafe_model.dart';
 
 /// Cafe Service - Handles all cafe-related API calls
@@ -103,35 +104,34 @@ class CafeService {
     String cafeId,
     String date,
   ) async {
-    print('📅 [CAFE_SERVICE] getCafeAvailability called - cafeId: $cafeId, date: $date');
+    AppLogger.d('📅 [CAFE_SERVICE] getCafeAvailability called - cafeId: $cafeId, date: $date');
     final response = await _apiClient.get<Map<String, dynamic>>(
       '${ApiConstants.cafes}/$cafeId/availability',
       queryParameters: {'date': date},
     );
 
-    print('📅 [CAFE_SERVICE] Response isSuccess: ${response.isSuccess}');
-    print('📅 [CAFE_SERVICE] Response data: ${response.data}');
+    AppLogger.d('📅 [CAFE_SERVICE] Response isSuccess: ${response.isSuccess}');
+    AppLogger.d('📅 [CAFE_SERVICE] Response data: ${response.data}');
 
     if (response.isSuccess && response.data != null) {
       final data = response.data!;
-      print('📅 [CAFE_SERVICE] Data success: ${data['success']}');
-      print('📅 [CAFE_SERVICE] Data has "data" field: ${data['data'] != null}');
+      AppLogger.d('📅 [CAFE_SERVICE] Data success: ${data['success']}');
+      AppLogger.d('📅 [CAFE_SERVICE] Data has "data" field: ${data['data'] != null}');
       
       if (data['success'] == true && data['data'] != null) {
-        print('📅 [CAFE_SERVICE] Parsing CafeAvailability from JSON...');
+        AppLogger.d('📅 [CAFE_SERVICE] Parsing CafeAvailability from JSON...');
         try {
           final availability = CafeAvailability.fromJson(data['data']);
-          print('📅 [CAFE_SERVICE] Successfully parsed availability!');
+          AppLogger.d('📅 [CAFE_SERVICE] Successfully parsed availability!');
           return availability;
         } catch (e, stackTrace) {
-          print('📅 [CAFE_SERVICE] ERROR parsing availability: $e');
-          print('📅 [CAFE_SERVICE] Stack trace: $stackTrace');
+          AppLogger.e('📅 [CAFE_SERVICE] ERROR parsing availability', e, stackTrace);
           return null;
         }
       }
     }
 
-    print('📅 [CAFE_SERVICE] Returning null - no valid data');
+    AppLogger.d('📅 [CAFE_SERVICE] Returning null - no valid data');
     return null;
   }
 

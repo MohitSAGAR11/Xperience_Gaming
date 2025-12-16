@@ -837,15 +837,14 @@ class _ReviewsSection extends ConsumerWidget {
               error: (_, __) => 'RATE THIS CAFE',
             ),
             onPressed: () async {
-              final checkResponse = await userReviewAsync.value;
-              if (checkResponse != null) {
-                await _showReviewDialog(
-                  context,
-                  ref,
-                  reviewService,
-                  checkResponse.review,
-                );
-              }
+              // Always fetch fresh data to ensure we have the latest review status
+              final freshCheckResponse = await ref.read(checkUserReviewProvider(cafeId).future);
+              await _showReviewDialog(
+                context,
+                ref,
+                reviewService,
+                freshCheckResponse.review, // Will be null if no review exists
+              );
             },
             icon: Icons.star_border,
           ),
@@ -1152,6 +1151,9 @@ class _ReviewsSection extends ConsumerWidget {
     ReviewService reviewService,
     Review? existingReview,
   ) async {
+    // Store whether we're editing or creating (before dialog closes)
+    final isEditing = existingReview != null;
+    
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AddReviewDialog(
@@ -1192,21 +1194,27 @@ class _ReviewsSection extends ConsumerWidget {
       // Add delay to ensure backend has fully processed the review and rating update
       await Future.delayed(const Duration(milliseconds: 500));
       
-      // Force refresh all related providers to fetch fresh data
+      // Invalidate all related providers first
       ref.invalidate(cafeReviewsProvider);
       ref.invalidate(checkUserReviewProvider);
       ref.invalidate(cafeProvider);
       
-      // Also trigger an immediate refresh for the current cafe's reviews
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Wait for providers to refresh to ensure fresh data
+      await ref.read(cafeReviewsProvider(CafeReviewsParams(cafeId: cafeId, limit: 5)).future);
+      await ref.read(checkUserReviewProvider(cafeId).future);
+      await ref.read(cafeProvider(cafeId).future);
+      
+      // Trigger another refresh to ensure UI updates
       ref.refresh(cafeReviewsProvider(CafeReviewsParams(cafeId: cafeId, limit: 5)));
       ref.refresh(checkUserReviewProvider(cafeId));
       ref.refresh(cafeProvider(cafeId));
       
       if (context.mounted) {
+        // Use the stored isEditing flag instead of checking existingReview
+        // (which might be stale after refresh)
         SnackbarUtils.showSuccess(
           context,
-          existingReview != null ? 'Review updated successfully!' : 'Review submitted successfully!',
+          isEditing ? 'Review updated successfully!' : 'Review submitted successfully!',
         );
       }
     }
@@ -1244,11 +1252,28 @@ class _ReviewsSection extends ConsumerWidget {
     if (confirmed == true) {
       final success = await reviewService.deleteReview(reviewId);
       if (success && context.mounted) {
+        // Invalidate all related providers first
         ref.invalidate(cafeReviewsProvider);
         ref.invalidate(checkUserReviewProvider);
         ref.invalidate(cafeProvider);
         
-        SnackbarUtils.showSuccess(context, 'Review deleted successfully');
+        // Add delay to ensure backend has processed the deletion
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Force refresh providers to get fresh data (no review should exist now)
+        // Use read().future to ensure we wait for the refresh to complete
+        await ref.read(cafeReviewsProvider(CafeReviewsParams(cafeId: cafeId, limit: 5)).future);
+        await ref.read(checkUserReviewProvider(cafeId).future);
+        await ref.read(cafeProvider(cafeId).future);
+        
+        // Trigger another refresh to ensure UI updates
+        ref.refresh(cafeReviewsProvider(CafeReviewsParams(cafeId: cafeId, limit: 5)));
+        ref.refresh(checkUserReviewProvider(cafeId));
+        ref.refresh(cafeProvider(cafeId));
+        
+        if (context.mounted) {
+          SnackbarUtils.showSuccess(context, 'Review deleted successfully');
+        }
       } else if (context.mounted) {
         SnackbarUtils.showError(context, 'Failed to delete review');
       }
