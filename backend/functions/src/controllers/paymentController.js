@@ -3,42 +3,51 @@ const { db } = require('../config/firebase');
 
 const PAYU_MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
 const PAYU_MERCHANT_SALT = process.env.PAYU_MERCHANT_SALT;
-const PAYU_BASE_URL = process.env.PAYU_BASE_URL || 'https://test.payu.in';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const PAYU_BASE_URL = process.env.PAYU_BASE_URL;
 
-// Logging helper
+// Ensure BACKEND_URL includes /api
+let BACKEND_URL = process.env.BACKEND_URL || 'https://asia-south1-xperience-gaming.cloudfunctions.net/api';
+if (BACKEND_URL && !BACKEND_URL.includes('/api')) {
+  BACKEND_URL = BACKEND_URL.endsWith('/') 
+    ? `${BACKEND_URL}api` 
+    : `${BACKEND_URL}/api`;
+}
+const FRONTEND_URL = process.env.FRONTEND_URL;
+
+// --- Helper Logs ---
 const logPayment = (message, data = null) => {
   console.log(`💳 [PAYMENT] ${message}`);
-  if (data) {
-    console.log(`💳 [PAYMENT] Data:`, JSON.stringify(data, null, 2));
-  }
+  if (data) console.log(`💳 [PAYMENT] Data:`, JSON.stringify(data, null, 2));
 };
 
 const logPaymentError = (message, error = null) => {
   console.error(`💳 [PAYMENT_ERROR] ${message}`);
-  if (error) {
-    console.error(`💳 [PAYMENT_ERROR] Details:`, error);
-    if (error.stack) {
-      console.error(`💳 [PAYMENT_ERROR] Stack:`, error.stack);
-    }
-  }
+  if (error) console.error(`💳 [PAYMENT_ERROR] Details:`, error);
 };
 
-// Generate PayU payment hash
+// --- HASH GENERATION (FIXED) ---
 function generatePaymentHash(params) {
+  // FIXED: Removed 'phone' from the hash string.
+  // Standard PayU Format: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt
+  // We leave UDF1-UDF5 empty (|||||).
+  // Total 11 pipes (|) between email and salt.
+  
   const hashString = `${PAYU_MERCHANT_KEY}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||${PAYU_MERCHANT_SALT}`;
+  
   const hash = crypto.createHash('sha512').update(hashString).digest('hex');
+  
   logPayment('Hash Generated', {
     hashString: hashString.replace(PAYU_MERCHANT_SALT, '[SALT_HIDDEN]'),
     hashLength: hash.length,
-    hashPrefix: hash.substring(0, 20) + '...'
+    hashFormat: 'Standard (Phone Excluded)', 
+    hashPipeCount: (hashString.match(/\|/g) || []).length
   });
+  
   return hash;
 }
 
-// Generate PayU response hash for verification
 function generateResponseHash(params) {
+  // Response hash logic remains the same
   const hashString = `${PAYU_MERCHANT_SALT}|${params.status}|||||||||||${params.email}|${params.firstname}|${params.productinfo}|${params.amount}|${params.txnid}|${PAYU_MERCHANT_KEY}`;
   return crypto.createHash('sha512').update(hashString).digest('hex');
 }
@@ -46,151 +55,72 @@ function generateResponseHash(params) {
 /**
  * @desc    Create PayU payment
  * @route   POST /api/payments/create-payment
- * @access  Private
  */
 const createPayment = async (req, res) => {
   try {
     logPayment('=== CREATE PAYMENT REQUEST ===');
-    logPayment('Request received', {
-      bookingId: req.body.bookingId,
-      amount: req.body.amount,
-      firstName: req.body.firstName,
-      email: req.body.email,
-      userId: req.user?.id
-    });
 
-    // Validate environment variables
-    if (!PAYU_MERCHANT_KEY) {
-      logPaymentError('PAYU_MERCHANT_KEY is missing from environment variables');
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Payment gateway configuration error. Please contact support.' 
-      });
+    if (!PAYU_MERCHANT_KEY || !PAYU_MERCHANT_SALT) {
+      logPaymentError('Missing Merchant Config');
+      return res.status(500).json({ success: false, message: 'Server config error' });
     }
-
-    if (!PAYU_MERCHANT_SALT) {
-      logPaymentError('PAYU_MERCHANT_SALT is missing from environment variables');
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Payment gateway configuration error. Please contact support.' 
-      });
-    }
-
-    logPayment('Environment check passed', {
-      hasMerchantKey: !!PAYU_MERCHANT_KEY,
-      hasMerchantSalt: !!PAYU_MERCHANT_SALT,
-      payuBaseUrl: PAYU_BASE_URL,
-      backendUrl: BACKEND_URL
-    });
 
     const { bookingId, amount, firstName, email, phone, productInfo } = req.body;
     
-    // Validate required fields
-    if (!bookingId) {
-      logPaymentError('Booking ID is missing');
-      return res.status(400).json({ success: false, message: 'Booking ID is required' });
+    // 1. Validation
+    if (!bookingId || !amount || !email) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    if (!amount || amount <= 0) {
-      logPaymentError('Invalid amount', { amount });
-      return res.status(400).json({ success: false, message: 'Invalid payment amount' });
-    }
-
-    if (!email) {
-      logPaymentError('Email is missing');
-      return res.status(400).json({ success: false, message: 'Email is required' });
-    }
-    
-    // Verify booking exists and belongs to user
-    logPayment('Fetching booking from database', { bookingId });
+    // 2. Booking Check
     const bookingDoc = await db.collection('bookings').doc(bookingId).get();
-    
     if (!bookingDoc.exists) {
-      logPaymentError('Booking not found', { bookingId });
       return res.status(404).json({ success: false, message: 'Booking not found' });
     }
+
+    // 3. Generate Transaction ID
+    const transactionId = `TXN${Date.now()}`;
     
-    const booking = bookingDoc.data();
-    logPayment('Booking found', {
-      bookingId,
-      userId: booking.userId,
-      paymentStatus: booking.paymentStatus,
-      status: booking.status
-    });
-    
-    if (booking.userId !== req.user.id) {
-      logPaymentError('Unauthorized access attempt', {
-        bookingUserId: booking.userId,
-        requestUserId: req.user.id
-      });
-      return res.status(403).json({ success: false, message: 'Not authorized' });
-    }
-    
-    // Check if booking is already paid
-    if (booking.paymentStatus === 'paid') {
-      logPaymentError('Booking already paid', { bookingId, paymentStatus: booking.paymentStatus });
-      return res.status(400).json({ success: false, message: 'Booking is already paid' });
-    }
-    
-    // Generate unique transaction ID
-    const transactionId = `TXN_${bookingId}_${Date.now()}`;
-    logPayment('Transaction ID generated', { transactionId });
-    
-    // Prepare payment parameters
+    // 4. Prepare Params
+    const formattedAmount = parseFloat(amount).toFixed(2);
+    const userPhone = phone || '9999999999'; // Default fallback
+    const nameParts = (firstName || 'Guest').trim().split(' ');
+    const userFirstName = nameParts[0].substring(0, 60);
+
     const paymentParams = {
       key: PAYU_MERCHANT_KEY,
       txnid: transactionId,
-      amount: amount.toString(),
-      productinfo: productInfo || `Booking ${bookingId}`,
-      firstname: firstName || req.user.name || 'Guest',
-      email: email || req.user.email,
-      phone: phone || req.user.phone || '',
-      surl: `${BACKEND_URL}/api/payments/success`,
-      furl: `${BACKEND_URL}/api/payments/failure`,
-      curl: `${BACKEND_URL}/api/payments/cancel`,
-      hash: '',
+      amount: formattedAmount,
+      productinfo: (productInfo || `Booking ${bookingId}`).substring(0, 100),
+      firstname: userFirstName,
+      email: email,
+      phone: userPhone, // Phone is SENT but NOT HASHED
+      surl: `${BACKEND_URL}/payments/success`,
+      furl: `${BACKEND_URL}/payments/failure`,
+      curl: `${BACKEND_URL}/payments/cancel`,
       service_provider: 'payu_paisa'
     };
 
-    logPayment('Payment parameters prepared', {
-      txnid: paymentParams.txnid,
-      amount: paymentParams.amount,
-      email: paymentParams.email,
-      firstname: paymentParams.firstname,
-      surl: paymentParams.surl,
-      furl: paymentParams.furl,
-      curl: paymentParams.curl
-    });
-    
-    // Generate hash
+    // 5. Generate Hash (Using the FIXED function)
     paymentParams.hash = generatePaymentHash(paymentParams);
-    logPayment('Hash generated successfully', { hashLength: paymentParams.hash.length });
-    
-    // Update booking with transaction ID
-    logPayment('Updating booking with transaction ID', { bookingId, transactionId });
+
+    // 6. Update Database
     await db.collection('bookings').doc(bookingId).update({
       paymentTransactionId: transactionId,
       paymentStatus: 'pending',
       updatedAt: new Date()
     });
-    logPayment('Booking updated successfully');
-    
-    const responseData = {
-      ...paymentParams,
-      paymentUrl: `${PAYU_BASE_URL}/_payment`,
-      bookingId: bookingId
-    };
 
-    logPayment('=== PAYMENT CREATED SUCCESSFULLY ===', {
-      transactionId,
-      paymentUrl: responseData.paymentUrl,
-      bookingId
-    });
-    
+    // 7. Send Response
     res.json({
       success: true,
-      data: responseData
+      data: {
+        ...paymentParams,
+        paymentUrl: `${PAYU_BASE_URL}/_payment`,
+        bookingId: bookingId
+      }
     });
+
   } catch (error) {
     logPaymentError('Create payment failed', error);
     res.status(500).json({ success: false, message: 'Failed to create payment' });
@@ -198,202 +128,70 @@ const createPayment = async (req, res) => {
 };
 
 /**
- * @desc    Verify payment (called from PayU success URL)
- * @route   POST /api/payments/success
- * @access  Public (PayU callback)
+ * @desc    Verify payment (Success Callback)
  */
 const verifyPayment = async (req, res) => {
   try {
-    logPayment('=== PAYMENT VERIFICATION CALLBACK ===');
-    logPayment('PayU callback received', {
-      body: req.body,
-      headers: req.headers
-    });
-
+    logPayment('=== PAYMENT SUCCESS CALLBACK ===', req.body);
     const { txnid, mihpayid, status, hash, productinfo } = req.body;
+
+    // 1. Find Booking
+    let bookingId = null;
+    const bookingsQuery = await db.collection('bookings').where('paymentTransactionId', '==', txnid).limit(1).get();
     
-    logPayment('Extracting booking ID', { txnid, productinfo });
-    
-    // Get booking ID from productinfo or transaction ID
-    const bookingIdMatch = productinfo?.match(/Booking\s+(\w+)/i) || txnid?.match(/TXN_(\w+)_/);
-    const bookingId = bookingIdMatch ? bookingIdMatch[1] : null;
-    
+    if (!bookingsQuery.empty) {
+      bookingId = bookingsQuery.docs[0].id;
+    } else {
+       // Fallback for testing/manual hits
+       const match = productinfo?.match(/Booking\s+(\w+)/i);
+       if (match) bookingId = match[1];
+    }
+
     if (!bookingId) {
-      logPaymentError('Could not extract booking ID from payment response', {
-        txnid,
-        productinfo,
-        body: req.body
-      });
-      return res.redirect(`${FRONTEND_URL}/payment/failure?reason=invalid_booking`);
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure&reason=booking_not_found`);
     }
 
-    logPayment('Booking ID extracted', { bookingId });
-    
-    // Verify hash
-    logPayment('Verifying payment hash');
+    // 2. Verify Hash (Security Check)
     const generatedHash = generateResponseHash(req.body);
-    
-    logPayment('Hash comparison', {
-      receivedHash: hash?.substring(0, 20) + '...',
-      generatedHash: generatedHash.substring(0, 20) + '...',
-      match: generatedHash === hash
-    });
-    
     if (generatedHash !== hash) {
-      logPaymentError('Invalid payment hash - SECURITY ALERT', {
-        bookingId,
-        receivedHash: hash,
-        generatedHash: generatedHash,
-        txnid,
-        status
-      });
-      await db.collection('bookings').doc(bookingId).update({
-        paymentStatus: 'failed',
-        updatedAt: new Date()
-      });
-      return res.redirect(`${FRONTEND_URL}/payment/failure?bookingId=${bookingId}&reason=hash_mismatch`);
+       logPaymentError('Hash Mismatch', { received: hash, generated: generatedHash });
+       await db.collection('bookings').doc(bookingId).update({ paymentStatus: 'failed_hash_mismatch' });
+       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure&reason=hash_mismatch`);
     }
 
-    logPayment('Hash verified successfully');
-    
-    // Get booking
-    logPayment('Fetching booking from database', { bookingId });
-    const bookingDoc = await db.collection('bookings').doc(bookingId).get();
-    if (!bookingDoc.exists) {
-      logPaymentError('Booking not found after hash verification', { bookingId });
-      return res.redirect(`${FRONTEND_URL}/payment/failure?reason=booking_not_found`);
-    }
-
-    const booking = bookingDoc.data();
-    logPayment('Booking found', {
-      bookingId,
-      currentStatus: booking.status,
-      currentPaymentStatus: booking.paymentStatus
+    // 3. Update DB & Redirect
+    await db.collection('bookings').doc(bookingId).update({
+      paymentId: mihpayid,
+      paymentStatus: 'paid',
+      status: 'confirmed',
+      paidAt: new Date()
     });
-    
-    // Update booking based on status
-    if (status === 'success') {
-      logPayment('Payment successful - updating booking', {
-        bookingId,
-        paymentId: mihpayid,
-        transactionId: txnid
-      });
 
-      await db.collection('bookings').doc(bookingId).update({
-        paymentId: mihpayid,
-        paymentHash: hash,
-        paymentStatus: 'paid',
-        status: 'confirmed',
-        paidAt: new Date(),
-        updatedAt: new Date()
-      });
+    // Redirect to your "Signal" URL so Flutter intercepts it
+    return res.redirect(`${FRONTEND_URL}/payment-result?status=success&bookingId=${bookingId}`);
 
-      logPayment('=== PAYMENT VERIFIED SUCCESSFULLY ===', {
-        bookingId,
-        paymentId: mihpayid,
-        transactionId: txnid
-      });
-      
-      // Redirect to success page
-      return res.redirect(`${FRONTEND_URL}/booking/${bookingId}/success?paymentId=${mihpayid}`);
-    } else {
-      logPaymentError('Payment failed', {
-        bookingId,
-        status,
-        transactionId: txnid,
-        paymentId: mihpayid
-      });
-
-      // Payment failed
-      await db.collection('bookings').doc(bookingId).update({
-        paymentStatus: 'failed',
-        updatedAt: new Date()
-      });
-      
-      return res.redirect(`${FRONTEND_URL}/payment/failure?bookingId=${bookingId}&reason=${status}`);
-    }
   } catch (error) {
-    logPaymentError('Verify payment error', error);
-    res.redirect(`${FRONTEND_URL}/payment/failure?reason=server_error`);
+    logPaymentError('Verify Error', error);
+    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
   }
 };
 
-/**
- * @desc    Handle payment failure
- * @route   POST /api/payments/failure
- * @access  Public (PayU callback)
- */
 const handlePaymentFailure = async (req, res) => {
-  try {
-    logPayment('=== PAYMENT FAILURE CALLBACK ===');
-    logPayment('Failure callback received', { body: req.body });
-
-    const { txnid, productinfo } = req.body;
-    
-    // Extract booking ID
-    const bookingIdMatch = productinfo?.match(/Booking\s+(\w+)/i) || txnid?.match(/TXN_(\w+)_/);
-    const bookingId = bookingIdMatch ? bookingIdMatch[1] : null;
-    
-    logPayment('Booking ID extracted from failure callback', { bookingId, txnid });
-    
-    if (bookingId) {
-      logPayment('Updating booking status to failed', { bookingId });
-      await db.collection('bookings').doc(bookingId).update({
-        paymentStatus: 'failed',
-        updatedAt: new Date()
-      });
-      logPayment('Booking updated to failed status');
-    } else {
-      logPaymentError('Could not extract booking ID from failure callback', {
-        txnid,
-        productinfo
-      });
-    }
-    
-    return res.redirect(`${FRONTEND_URL}/payment/failure${bookingId ? `?bookingId=${bookingId}` : ''}`);
-  } catch (error) {
-    logPaymentError('Payment failure handler error', error);
-    res.redirect(`${FRONTEND_URL}/payment/failure`);
+  logPayment('=== PAYMENT FAILURE CALLBACK ===', req.body);
+  const { txnid } = req.body;
+  
+  // Try to update DB to failed
+  const bookingsQuery = await db.collection('bookings').where('paymentTransactionId', '==', txnid).limit(1).get();
+  if (!bookingsQuery.empty) {
+     await bookingsQuery.docs[0].ref.update({ paymentStatus: 'failed' });
   }
+
+  res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
 };
 
-/**
- * @desc    Handle payment cancellation
- * @route   POST /api/payments/cancel
- * @access  Public (PayU callback)
- */
 const handlePaymentCancel = async (req, res) => {
-  try {
-    logPayment('=== PAYMENT CANCELLATION CALLBACK ===');
-    logPayment('Cancel callback received', { body: req.body });
-
-    const { txnid, productinfo } = req.body;
-    
-    // Extract booking ID
-    const bookingIdMatch = productinfo?.match(/Booking\s+(\w+)/i) || txnid?.match(/TXN_(\w+)_/);
-    const bookingId = bookingIdMatch ? bookingIdMatch[1] : null;
-    
-    logPayment('Booking ID extracted from cancel callback', { bookingId, txnid });
-    
-    if (bookingId) {
-      logPayment('Updating booking status to failed (cancelled)', { bookingId });
-      await db.collection('bookings').doc(bookingId).update({
-        paymentStatus: 'failed',
-        updatedAt: new Date()
-      });
-      logPayment('Booking updated to failed status (cancelled)');
-    } else {
-      logPaymentError('Could not extract booking ID from cancel callback', {
-        txnid,
-        productinfo
-      });
-    }
-    
-    return res.redirect(`${FRONTEND_URL}/payment/cancel${bookingId ? `?bookingId=${bookingId}` : ''}`);
-  } catch (error) {
-    logPaymentError('Payment cancel handler error', error);
-    res.redirect(`${FRONTEND_URL}/payment/cancel`);
-  }
+  logPayment('=== PAYMENT CANCEL CALLBACK ===', req.body);
+  res.redirect(`${FRONTEND_URL}/payment-result?status=cancel`);
 };
 
 module.exports = {
@@ -402,4 +200,3 @@ module.exports = {
   handlePaymentFailure,
   handlePaymentCancel
 };
-

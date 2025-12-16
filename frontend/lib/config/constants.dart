@@ -13,7 +13,7 @@ class ApiConstants {
   // 4. Hot reload/restart app
   //
   // Current IP: 10.10.6.96 (updated automatically)
-  static const String baseUrl = 'http://10.10.6.96:5000/api';
+  static const String baseUrl = 'https://asia-south1-xperience-gaming.cloudfunctions.net/api';
   
   // Auth Endpoints
   // Note: register/login are handled by Firebase Auth, backend endpoints are:

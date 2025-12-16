@@ -202,6 +202,34 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     return 0;
   }
 
+  /// Check if a time slot is in the past (only for today's date)
+  bool _isTimeSlotInPast(String time) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selectedDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    
+    // If selected date is not today, all slots are available
+    if (selectedDay.isAfter(today)) {
+      return false;
+    }
+    
+    // If selected date is before today, all slots are in the past
+    if (selectedDay.isBefore(today)) {
+      return true;
+    }
+    
+    // For today's date, check if the time slot is before current time
+    final timeParts = time.split(':');
+    if (timeParts.length < 2) return false;
+    
+    final slotHour = int.tryParse(timeParts[0]) ?? 0;
+    final slotMinute = int.tryParse(timeParts[1]) ?? 0;
+    final slotTime = DateTime(now.year, now.month, now.day, slotHour, slotMinute);
+    
+    // Slot is in the past if it's before current time (with 1 minute buffer for rounding)
+    return slotTime.isBefore(now.subtract(const Duration(minutes: 1)));
+  }
+
   /// Check if a time is in the closed period (between closing and opening)
   /// This prevents selecting times during closed hours as START time
   bool _isInClosedPeriod(String time) {
@@ -1017,6 +1045,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _timeSlots.map((time) {
+                      final isPast = _isTimeSlotInPast(time);
                       final isStart = _startTime == time;
                       final isEnd = _endTime == time;
                       // Check if time is in selected range (handle midnight crossing)
@@ -1042,7 +1071,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                       }
 
                       return GestureDetector(
-                        onTap: () {
+                        onTap: isPast ? null : () {
                           // Determine if we should fetch availability after setState
                           bool shouldFetch = false;
                           
@@ -1057,12 +1086,14 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                           setState(() {
                             if (_startTime == null) {
                               // First tap: set start time
-                              // Validate: start time must not be in closed period
-                              if (!_isInClosedPeriod(time)) {
+                              // Validate: start time must not be in closed period or past
+                              if (!_isInClosedPeriod(time) && !isPast) {
                                 _startTime = time;
                                 _endTime = null;
                                 _availableCount = 0;
                                 _selectedStation = null;
+                              } else if (isPast) {
+                                SnackbarUtils.showError(context, 'Cannot select past time slots');
                               } else {
                                 SnackbarUtils.showError(context, 'Cannot start booking during closed hours');
                               }
@@ -1072,21 +1103,27 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                                 _endTime = time;
                               } else {
                                 // Clicked invalid time, reset to new start
-                                if (!_isInClosedPeriod(time)) {
+                                if (!_isInClosedPeriod(time) && !isPast) {
                                   _startTime = time;
                                   _endTime = null;
                                   _availableCount = 0;
                                   _selectedStation = null;
+                                } else if (isPast) {
+                                  SnackbarUtils.showError(context, 'Cannot select past time slots');
                                 } else {
                                   SnackbarUtils.showError(context, 'Cannot start booking during closed hours');
                                 }
                               }
                             } else {
                               // Third tap: reset and start new selection
-                              _startTime = time;
-                              _endTime = null;
-                              _availableCount = 0;
-                              _selectedStation = null;
+                              if (!isPast) {
+                                _startTime = time;
+                                _endTime = null;
+                                _availableCount = 0;
+                                _selectedStation = null;
+                              } else {
+                                SnackbarUtils.showError(context, 'Cannot select past time slots');
+                              }
                             }
                           });
                           
@@ -1095,36 +1132,46 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                             _updateAvailableCount();
                           }
                         },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isStart || isEnd
-                                ? AppColors.neonPurple
-                                : isInRange
-                                    ? AppColors.neonPurple.withOpacity(0.3)
-                                    : AppColors.surfaceDark,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isStart || isEnd
-                                  ? AppColors.neonPurple
-                                  : isInRange
-                                      ? AppColors.neonPurple.withOpacity(0.5)
-                                      : AppColors.cardDark,
+                        child: Opacity(
+                          opacity: isPast ? 0.4 : 1.0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
                             ),
-                          ),
-                          child: Text(
-                            time,
-                            style: TextStyle(
-                              color: isStart || isEnd
-                                  ? Colors.white
-                                  : isInRange
+                            decoration: BoxDecoration(
+                              color: isPast
+                                  ? AppColors.surfaceDark
+                                  : isStart || isEnd
                                       ? AppColors.neonPurple
-                                      : AppColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: isStart || isEnd ? FontWeight.bold : FontWeight.normal,
+                                      : isInRange
+                                          ? AppColors.neonPurple.withOpacity(0.3)
+                                          : AppColors.surfaceDark,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isPast
+                                    ? AppColors.cardDark.withOpacity(0.5)
+                                    : isStart || isEnd
+                                        ? AppColors.neonPurple
+                                        : isInRange
+                                            ? AppColors.neonPurple.withOpacity(0.5)
+                                            : AppColors.cardDark,
+                              ),
+                            ),
+                            child: Text(
+                              time,
+                              style: TextStyle(
+                                color: isPast
+                                    ? AppColors.textMuted
+                                    : isStart || isEnd
+                                        ? Colors.white
+                                        : isInRange
+                                            ? AppColors.neonPurple
+                                            : AppColors.textSecondary,
+                                fontSize: 13,
+                                fontWeight: isStart || isEnd ? FontWeight.bold : FontWeight.normal,
+                                decoration: isPast ? TextDecoration.lineThrough : null,
+                              ),
                             ),
                           ),
                         ),

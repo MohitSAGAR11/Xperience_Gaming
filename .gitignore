@@ -13,3 +13,4 @@ package-lock.json
 # Firebase
 backend/firebase-service-account.json
 *.firebase-service-account.json
+backend/functions/firebase-service-account.json

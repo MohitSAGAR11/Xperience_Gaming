@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+// Check imports based on your folder structure
 import '../../../config/theme.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/payment_service.dart';
@@ -42,21 +43,17 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
     
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(AppColors.trueBlack) // Avoid white flash
+      ..addJavaScriptChannel(
+        'PayUConsole',
+        onMessageReceived: (JavaScriptMessage message) {
+          AppLogger.d('💳 [PAYMENT_SCREEN] Console: ${message.message}');
+        },
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
             AppLogger.d('💳 [PAYMENT_SCREEN] Page started loading: $url');
-            
-            // Check if this is a success/failure callback
-            if (url.contains('/success') || url.contains('/failure') || url.contains('/cancel')) {
-              AppLogger.d('💳 [PAYMENT_SCREEN] Payment callback detected: $url');
-              setState(() {
-                _paymentCompleted = true;
-                _isLoading = false;
-              });
-            } else if (url.contains('payu.in')) {
-              AppLogger.d('💳 [PAYMENT_SCREEN] PayU payment page loaded');
-            }
           },
           onPageFinished: (String url) {
             AppLogger.d('💳 [PAYMENT_SCREEN] Page finished loading: $url');
@@ -65,20 +62,34 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
             });
           },
           onWebResourceError: (WebResourceError error) {
-            AppLogger.e('💳 [PAYMENT_SCREEN] WebView error', error);
-            AppLogger.e('💳 [PAYMENT_SCREEN] Error code: ${error.errorCode}');
-            AppLogger.e('💳 [PAYMENT_SCREEN] Error description: ${error.description}');
-            AppLogger.e('💳 [PAYMENT_SCREEN] Failed URL: ${error.url}');
-            
-            setState(() {
-              _isLoading = false;
-            });
-            if (mounted) {
-              SnackbarUtils.showError(context, 'Payment page failed to load');
-            }
+            AppLogger.e('💳 [PAYMENT_SCREEN] WebView error: ${error.description}');
+            // Don't show error UI immediately as some assets (like favicons) failing is normal
           },
           onNavigationRequest: (NavigationRequest request) {
             AppLogger.d('💳 [PAYMENT_SCREEN] Navigation request: ${request.url}');
+            
+            // --- SIGNAL INTERCEPTION LOGIC ---
+            // Intercept backend redirects to success/failure pages
+            if (request.url.contains('/success') || 
+                request.url.contains('/failure') || 
+                request.url.contains('/cancel') ||
+                request.url.contains('/payment-result')) {
+                  
+              AppLogger.d("💳 [PAYMENT_SCREEN] Signal Received! Closing WebView.");
+              
+              bool isSuccess = request.url.contains('success');
+              
+              if (mounted) {
+                if (isSuccess) {
+                  Navigator.pop(context, true); // Return TRUE for success
+                } else {
+                  Navigator.pop(context, false); // Return FALSE for failure
+                }
+              }
+              
+              return NavigationDecision.prevent; // STOP loading the page
+            }
+            
             return NavigationDecision.navigate;
           },
         ),
@@ -88,30 +99,19 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   }
 
   Future<void> _loadPaymentPage() async {
-    AppLogger.d('💳 [PAYMENT_SCREEN] ========================================');
-    AppLogger.d('💳 [PAYMENT_SCREEN] _loadPaymentPage called');
-    AppLogger.d('💳 [PAYMENT_SCREEN] Booking ID: ${widget.booking.id}');
-    AppLogger.d('💳 [PAYMENT_SCREEN] Amount: ₹${widget.amount}');
-    AppLogger.d('💳 [PAYMENT_SCREEN] ========================================');
-
     try {
       setState(() => _isLoading = true);
-      AppLogger.d('💳 [PAYMENT_SCREEN] Loading state set to true');
-
+      
       final paymentService = ref.read(paymentServiceProvider);
       final currentUser = ref.read(currentUserProvider);
 
       if (currentUser == null) {
-        AppLogger.e('💳 [PAYMENT_SCREEN] User not logged in');
         if (mounted) {
           SnackbarUtils.showError(context, 'User not logged in');
           context.pop();
         }
         return;
       }
-
-      AppLogger.d('💳 [PAYMENT_SCREEN] User authenticated: ${currentUser.email}');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Initiating payment with service...');
 
       // Initiate payment
       final paymentResponse = await paymentService.initiatePayment(
@@ -123,14 +123,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         productInfo: 'Booking ${widget.booking.id}',
       );
 
-      AppLogger.d('💳 [PAYMENT_SCREEN] Payment service response received');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Response success: ${paymentResponse.success}');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Response message: ${paymentResponse.message}');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Has data: ${paymentResponse.data != null}');
-
       if (!paymentResponse.success || paymentResponse.data == null) {
-        AppLogger.e('💳 [PAYMENT_SCREEN] Payment initiation failed');
-        AppLogger.e('💳 [PAYMENT_SCREEN] Error: ${paymentResponse.message}');
         if (mounted) {
           SnackbarUtils.showError(context, paymentResponse.message);
           context.pop();
@@ -138,25 +131,17 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         return;
       }
 
-      AppLogger.d('💳 [PAYMENT_SCREEN] Payment data received successfully');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Transaction ID: ${paymentResponse.data!.txnid}');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Payment URL: ${paymentResponse.data!.paymentUrl}');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Building payment form HTML...');
-
       // Load payment form HTML
       final htmlContent = paymentResponse.data!.buildPaymentFormHtml();
-      AppLogger.d('💳 [PAYMENT_SCREEN] HTML form built, length: ${htmlContent.length} characters');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Loading HTML into WebView...');
       
       await _webViewController.loadHtmlString(htmlContent);
       
-      AppLogger.d('💳 [PAYMENT_SCREEN] HTML loaded into WebView successfully');
-      AppLogger.d('💳 [PAYMENT_SCREEN] Form will auto-submit to PayU');
-      AppLogger.d('💳 [PAYMENT_SCREEN] ========================================');
+      AppLogger.d('💳 [PAYMENT_SCREEN] HTML Form Loaded. Redirecting to PayU...');
+      
     } catch (e, stackTrace) {
-      AppLogger.e('💳 [PAYMENT_SCREEN] Exception in _loadPaymentPage', e, stackTrace);
+      AppLogger.e('💳 [PAYMENT_SCREEN] Exception', e, stackTrace);
       if (mounted) {
-        SnackbarUtils.showError(context, 'Failed to initialize payment: $e');
+        SnackbarUtils.showError(context, 'Payment initialization failed');
         context.pop();
       }
     }
@@ -169,16 +154,15 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surfaceDark,
         title: const Text('Payment'),
-        leading: _paymentCompleted
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => _showCancelDialog(),
-              ),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => _showCancelDialog(),
+        ),
       ),
       body: Stack(
         children: [
           WebViewWidget(controller: _webViewController),
+          
           if (_isLoading)
             Container(
               color: AppColors.trueBlack,
@@ -189,7 +173,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                     NeonLoader(),
                     SizedBox(height: 24),
                     Text(
-                      'Loading payment gateway...',
+                      'Redirecting to secure gateway...',
                       style: TextStyle(color: AppColors.textSecondary),
                     ),
                   ],
@@ -206,28 +190,23 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceDark,
-        title: const Text(
-          'Cancel Payment?',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
+        title: const Text('Cancel Payment?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Are you sure you want to cancel the payment? Your booking will remain pending.',
+          'Your booking will remain pending until payment is completed.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Continue Payment'),
+            child: const Text('Continue'),
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
-              context.pop();
+              Navigator.pop(context); // Close Dialog
+              Navigator.pop(context, false); // Close Screen with Failure result
             },
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.error,
-            ),
-            child: const Text('Cancel'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Cancel Payment'),
           ),
         ],
       ),
@@ -237,10 +216,11 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Load payment page when screen is ready
+    // Load payment page once the screen is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadPaymentPage();
+      if(_isLoading && !_paymentCompleted) { 
+        _loadPaymentPage();
+      }
     });
   }
 }
-

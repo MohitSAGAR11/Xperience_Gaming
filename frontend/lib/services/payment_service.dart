@@ -66,6 +66,13 @@ class PaymentService {
         AppLogger.d('💳 [PAYMENT_SERVICE] Transaction ID: ${paymentResponse.data!.txnid}');
         AppLogger.d('💳 [PAYMENT_SERVICE] Payment URL: ${paymentResponse.data!.paymentUrl}');
         AppLogger.d('💳 [PAYMENT_SERVICE] Hash length: ${paymentResponse.data!.hash.length}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Amount: ${paymentResponse.data!.amount}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Email: ${paymentResponse.data!.email}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] First Name: ${paymentResponse.data!.firstname}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Product Info: ${paymentResponse.data!.productinfo}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Success URL: ${paymentResponse.data!.surl}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Failure URL: ${paymentResponse.data!.furl}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Cancel URL: ${paymentResponse.data!.curl}');
         AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
       } else {
         AppLogger.w('💳 [PAYMENT_SERVICE] Payment response indicates failure');
@@ -154,11 +161,7 @@ class PaymentService {
       }
 
       final refundStatus = RefundStatusResponse.fromJson(response.data!);
-      AppLogger.d('💳 [PAYMENT_SERVICE] Refund status retrieved', {
-        'status': refundStatus.refundStatus,
-        'amount': refundStatus.refundAmount,
-        'refundId': refundStatus.refundId
-      });
+      AppLogger.d('💳 [PAYMENT_SERVICE] Refund status retrieved - Status: ${refundStatus.refundStatus}, Amount: ₹${refundStatus.refundAmount}, Refund ID: ${refundStatus.refundId}');
       return refundStatus;
     } catch (e, stackTrace) {
       AppLogger.e('💳 [PAYMENT_SERVICE] Get refund status exception', e, stackTrace);
@@ -199,8 +202,15 @@ class PaymentData {
   final String amount;
   final String productinfo;
   final String firstname;
+  final String lastname;
   final String email;
   final String phone;
+  final String address1;
+  final String address2;
+  final String city;
+  final String state;
+  final String country;
+  final String zipcode;
   final String surl;
   final String furl;
   final String curl;
@@ -214,8 +224,15 @@ class PaymentData {
     required this.amount,
     required this.productinfo,
     required this.firstname,
+    required this.lastname,
     required this.email,
     required this.phone,
+    required this.address1,
+    required this.address2,
+    required this.city,
+    required this.state,
+    required this.country,
+    required this.zipcode,
     required this.surl,
     required this.furl,
     required this.curl,
@@ -231,8 +248,15 @@ class PaymentData {
       amount: json['amount'] ?? '0',
       productinfo: json['productinfo'] ?? '',
       firstname: json['firstname'] ?? '',
+      lastname: json['lastname'] ?? '',
       email: json['email'] ?? '',
       phone: json['phone'] ?? '',
+      address1: json['address1'] ?? '',
+      address2: json['address2'] ?? '',
+      city: json['city'] ?? '',
+      state: json['state'] ?? '',
+      country: json['country'] ?? 'IN',
+      zipcode: json['zipcode'] ?? '',
       surl: json['surl'] ?? '',
       furl: json['furl'] ?? '',
       curl: json['curl'] ?? '',
@@ -244,20 +268,41 @@ class PaymentData {
 
   /// Build PayU payment form HTML
   String buildPaymentFormHtml() {
+    // HTML encode values to prevent XSS and ensure proper form submission
+    String htmlEncode(String value) {
+      return value
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#x27;');
+    }
+    
     final formFields = [
-      '<input type="hidden" name="key" value="$key">',
-      '<input type="hidden" name="txnid" value="$txnid">',
-      '<input type="hidden" name="amount" value="$amount">',
-      '<input type="hidden" name="productinfo" value="$productinfo">',
-      '<input type="hidden" name="firstname" value="$firstname">',
-      '<input type="hidden" name="email" value="$email">',
-      '<input type="hidden" name="phone" value="$phone">',
-      '<input type="hidden" name="surl" value="$surl">',
-      '<input type="hidden" name="furl" value="$furl">',
-      '<input type="hidden" name="curl" value="$curl">',
-      '<input type="hidden" name="hash" value="$hash">',
+      '<input type="hidden" name="key" value="${htmlEncode(key)}">',
+      '<input type="hidden" name="txnid" value="${htmlEncode(txnid)}">',
+      '<input type="hidden" name="amount" value="${htmlEncode(amount)}">',
+      '<input type="hidden" name="productinfo" value="${htmlEncode(productinfo)}">',
+      '<input type="hidden" name="firstname" value="${htmlEncode(firstname)}">',
+      '<input type="hidden" name="lastname" value="${htmlEncode(lastname)}">',
+      '<input type="hidden" name="email" value="${htmlEncode(email)}">',
+      '<input type="hidden" name="phone" value="${htmlEncode(phone)}">',
+      '<input type="hidden" name="address1" value="${htmlEncode(address1)}">',
+      '<input type="hidden" name="address2" value="${htmlEncode(address2)}">',
+      '<input type="hidden" name="city" value="${htmlEncode(city)}">',
+      '<input type="hidden" name="state" value="${htmlEncode(state)}">',
+      '<input type="hidden" name="country" value="${htmlEncode(country)}">',
+      '<input type="hidden" name="zipcode" value="${htmlEncode(zipcode)}">',
+      '<input type="hidden" name="surl" value="${htmlEncode(surl)}">',
+      '<input type="hidden" name="furl" value="${htmlEncode(furl)}">',
+      '<input type="hidden" name="curl" value="${htmlEncode(curl)}">',
+      '<input type="hidden" name="hash" value="${htmlEncode(hash)}">',
       '<input type="hidden" name="service_provider" value="payu_paisa">',
     ].join('\n');
+    
+    AppLogger.d('💳 [PAYMENT_FORM] Building PayU form HTML');
+    AppLogger.d('💳 [PAYMENT_FORM] Form fields count: ${formFields.split('\n').length}');
+    AppLogger.d('💳 [PAYMENT_FORM] Payment URL: $paymentUrl');
 
     return '''
       <!DOCTYPE html>
@@ -300,11 +345,30 @@ class PaymentData {
           <div class="spinner"></div>
           <p>Redirecting to payment gateway...</p>
         </div>
-        <form id="payuForm" action="$paymentUrl" method="post" style="display: none;">
+        <form id="payuForm" action="$paymentUrl" method="post" enctype="application/x-www-form-urlencoded" style="display: none;">
           $formFields
         </form>
         <script>
-          document.getElementById('payuForm').submit();
+          console.log('PayU Form Submission Starting...');
+          console.log('Form Action:', document.getElementById('payuForm').action);
+          console.log('Form Method:', document.getElementById('payuForm').method);
+          console.log('Form Fields Count:', document.getElementById('payuForm').elements.length);
+          
+          // Log all form values for debugging
+          const form = document.getElementById('payuForm');
+          const formData = new FormData(form);
+          console.log('Form Data:');
+          for (let [key, value] of formData.entries()) {
+            console.log(key + ':', value);
+          }
+          
+          // Submit form
+          try {
+            document.getElementById('payuForm').submit();
+            console.log('Form submitted successfully');
+          } catch (error) {
+            console.error('Form submission error:', error);
+          }
         </script>
       </body>
       </html>
