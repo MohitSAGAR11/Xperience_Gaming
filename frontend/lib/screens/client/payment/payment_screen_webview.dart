@@ -12,10 +12,10 @@ import '../../../core/api_client.dart';
 import '../../../core/utils.dart';
 import '../../../core/logger.dart';
 import '../../../widgets/loading_widget.dart' show NeonLoader;
-import 'package:dio/dio.dart';
+import '../../../services/payment_service.dart';
 
 /// Payment Screen - WebView Implementation
-/// Uses server-side HTML form that auto-submits to PayU
+/// Uses server-side HTML that redirects to Cashfree checkout
 class PaymentScreenWebView extends ConsumerStatefulWidget {
   final String bookingId;
   final double amount;
@@ -70,9 +70,8 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
 
     try {
       AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] 📡 FETCHING PAYMENT HTML FROM BACKEND');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] 📡 INITIATING CASHFREE PAYMENT');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] Endpoint: ${ApiConstants.createPayment}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Full URL: ${ApiConstants.baseUrl}${ApiConstants.createPayment}');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] Request Data:');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] - bookingId: ${widget.bookingId}');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] - amount: ${widget.amount}');
@@ -81,56 +80,40 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
       AppLogger.d('💳 [PAYMENT_WEBVIEW] - phone: ${widget.phone ?? currentUser.phone ?? '9999999999'}');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] - productInfo: ${widget.productInfo ?? 'Booking ${widget.bookingId}'}');
       
-      // Use Dio directly to make POST request with proper auth headers and accept HTML
-      final dio = ref.read(dioProvider);
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Dio instance obtained');
-      
-      // Override Accept header to get HTML instead of JSON
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Making POST request with Accept: text/html...');
-      final response = await dio.post(
-        ApiConstants.createPayment,
-        data: {
-          'bookingId': widget.bookingId,
-          'amount': widget.amount,
-          'firstName': widget.firstName ?? currentUser.name ?? 'Guest',
-          'email': widget.email ?? currentUser.email ?? '',
-          'phone': widget.phone ?? currentUser.phone ?? '9999999999',
-          'productInfo': widget.productInfo ?? 'Booking ${widget.bookingId}',
-        },
-        options: Options(
-          headers: {
-            'Accept': 'text/html',
-            'Content-Type': 'application/json',
-          },
-          responseType: ResponseType.plain, // Get response as String
-        ),
+      // Use PaymentService to initiate payment (returns JSON with payment session data)
+      final paymentService = ref.read(paymentServiceProvider);
+      final paymentResponse = await paymentService.initiatePayment(
+        bookingId: widget.bookingId,
+        amount: widget.amount,
+        firstName: widget.firstName ?? currentUser.name ?? 'Guest',
+        email: widget.email ?? currentUser.email ?? '',
+        phone: widget.phone ?? currentUser.phone ?? '9999999999',
+        productInfo: widget.productInfo ?? 'Booking ${widget.bookingId}',
       );
 
       AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] 📥 RESPONSE RECEIVED');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Status Code: ${response.statusCode}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Response Headers: ${response.headers}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Response Type: ${response.data.runtimeType}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Has Data: ${response.data != null}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Data Length: ${response.data != null ? (response.data as String).length : 0}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] 📥 PAYMENT RESPONSE RECEIVED');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] Success: ${paymentResponse.success}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] Message: ${paymentResponse.message}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] Has Data: ${paymentResponse.data != null}');
 
-      if (response.statusCode != 200 || response.data == null) {
+      if (!paymentResponse.success || paymentResponse.data == null) {
         AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
-        AppLogger.e('💳 [PAYMENT_WEBVIEW] ❌ FAILED TO FETCH PAYMENT HTML');
-        AppLogger.e('💳 [PAYMENT_WEBVIEW] Status Code: ${response.statusCode}');
-        AppLogger.e('💳 [PAYMENT_WEBVIEW] Has Data: ${response.data != null}');
+        AppLogger.e('💳 [PAYMENT_WEBVIEW] ❌ FAILED TO INITIATE PAYMENT');
+        AppLogger.e('💳 [PAYMENT_WEBVIEW] Error: ${paymentResponse.message}');
         AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
         if (mounted) {
-          SnackbarUtils.showError(context, 'Failed to load payment page (${response.statusCode})');
+          SnackbarUtils.showError(context, paymentResponse.message ?? 'Failed to initiate payment');
           context.pop();
         }
         return;
       }
 
-      final htmlContent = response.data as String;
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ HTML Content received');
+      // Generate HTML page using PaymentData
+      final htmlContent = paymentResponse.data!.buildPaymentPageHtml();
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ HTML Content generated');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] HTML Length: ${htmlContent.length}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] HTML First 100 chars: ${htmlContent.substring(0, htmlContent.length > 100 ? 100 : htmlContent.length)}...');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] Payment Session ID: ${paymentResponse.data!.paymentSessionId}');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
 
       // Create WebView controller with proper configuration to handle cross-origin
@@ -139,51 +122,41 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
       
       final controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setBackgroundColor(Colors.black)
+        ..setBackgroundColor(Colors.white)
+        ..enableZoom(true)
         ..setNavigationDelegate(
           NavigationDelegate(
             onProgress: (int progress) {
               AppLogger.d('💳 [PAYMENT_WEBVIEW] ⏳ Loading progress: $progress%');
             },
             onPageStarted: (url) {
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] 📄 PAGE STARTED');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] URL: $url');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is PayU URL: ${url.contains('secure.payu.in') || url.contains('test.payu.in')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Backend URL: ${url.contains('cloudfunctions.net')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Success URL: ${url.contains('/payments/success')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Failure URL: ${url.contains('/payments/failure')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Cancel URL: ${url.contains('/payments/cancel')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-              
-              _checkPaymentCallback(url);
+              // Note: Callback URL should be intercepted in onNavigationRequest
+              // This is just for logging other page navigations
+              if (!url.contains('/api/payments/callback')) {
+                AppLogger.d('💳 [PAYMENT_WEBVIEW] Page started: $url');
+              }
             },
             onPageFinished: (url) {
               AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
               AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ PAGE FINISHED');
               AppLogger.d('💳 [PAYMENT_WEBVIEW] URL: $url');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is PayU URL: ${url.contains('secure.payu.in') || url.contains('test.payu.in')}');
+              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Cashfree URL: ${url.contains('payments.cashfree.com') || url.contains('cashfree.com')}');
               AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Backend URL: ${url.contains('cloudfunctions.net')}');
               AppLogger.d('💳 [PAYMENT_WEBVIEW] Current loading state: $_isLoading');
               
-              // If we're on PayU page, log it
-              if (url.contains('secure.payu.in') || url.contains('test.payu.in')) {
-                AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ Successfully navigated to PayU payment page');
-                AppLogger.d('💳 [PAYMENT_WEBVIEW] PayU page should be visible now');
+              // If we're on Cashfree page, log it
+              if (url.contains('payments.cashfree.com') || url.contains('cashfree.com')) {
+                AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ Successfully navigated to Cashfree payment page');
+                AppLogger.d('💳 [PAYMENT_WEBVIEW] Cashfree page should be visible now');
               } else if (url.contains('cloudfunctions.net')) {
-                AppLogger.w('💳 [PAYMENT_WEBVIEW] ⚠️ Navigated back to backend URL - this might indicate a redirect issue');
-                AppLogger.w('💳 [PAYMENT_WEBVIEW] This could mean PayU redirected back or form submission failed');
+                AppLogger.d('💳 [PAYMENT_WEBVIEW] Navigated to backend URL (callback or redirect)');
               }
               
               if (mounted) {
                 setState(() {
                   _isLoading = false;
                 });
-                AppLogger.d('💳 [PAYMENT_WEBVIEW] Loading state updated to: false');
               }
-              
-              _checkPaymentCallback(url);
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
             },
             onWebResourceError: (error) {
               AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
@@ -195,7 +168,7 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Is ORB Error: ${error.description.contains('ERR_BLOCKED_BY_ORB')}');
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Is Abort Error: ${error.description.contains('ERR_ABORTED')}');
               
-              // Ignore ORB errors - they're expected when submitting to PayU
+              // Ignore ORB errors - they're expected when redirecting to Cashfree
               if (error.description.contains('ERR_BLOCKED_BY_ORB') || 
                   error.description.contains('ERR_ABORTED')) {
                 AppLogger.w('💳 [PAYMENT_WEBVIEW] ⚠️ ORB/Abort error (expected during form submission)');
@@ -210,17 +183,32 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
               AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
             },
             onNavigationRequest: (request) {
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] 🧭 NAVIGATION REQUEST');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Request URL: ${request.url}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Main Frame: ${request.isMainFrame}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is PayU URL: ${request.url.contains('secure.payu.in') || request.url.contains('test.payu.in')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Is Backend URL: ${request.url.contains('cloudfunctions.net')}');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] Decision: ALLOWING navigation');
-              AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
+              // Intercept callback URL navigation to prevent loading backend response
+              if (request.url.contains('/api/payments/callback')) {
+                AppLogger.d('💳 [PAYMENT_WEBVIEW] Callback URL detected in navigation request: ${request.url}');
+                
+                // Parse order_id from URL
+                String? orderId;
+                try {
+                  final uri = Uri.parse(request.url);
+                  orderId = uri.queryParameters['order_id'];
+                  AppLogger.d('💳 [PAYMENT_WEBVIEW] Order ID from callback: $orderId');
+                } catch (e) {
+                  AppLogger.w('💳 [PAYMENT_WEBVIEW] Could not parse callback URL: $e');
+                }
+                
+                // Prevent navigation and close WebView
+                if (mounted) {
+                  AppLogger.d('💳 [PAYMENT_WEBVIEW] Preventing navigation and closing WebView');
+                  // Close WebView and return orderId (or true if orderId not found) to indicate payment completion
+                  Navigator.of(context).pop(orderId ?? true);
+                }
+                
+                // Prevent the WebView from loading the callback URL
+                return NavigationDecision.prevent;
+              }
               
-              _checkPaymentCallback(request.url);
-              // Allow all navigation - including to PayU
+              // Allow all other navigation (Cashfree pages, banking pages, etc.)
               return NavigationDecision.navigate;
             },
             onUrlChange: (UrlChange change) {
@@ -244,13 +232,13 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
       
       // Check if form is present in HTML
       final hasForm = htmlContent.contains('<form');
-      final hasPayUAction = htmlContent.contains('secure.payu.in');
+      final hasCashfreeAction = htmlContent.contains('payments.cashfree.com') || htmlContent.contains('cashfree.com');
       final hasAutoSubmit = htmlContent.contains('setTimeout');
       
       AppLogger.d('💳 [PAYMENT_WEBVIEW] HTML Analysis:');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] - Contains <form>: $hasForm');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] - Contains PayU action: $hasPayUAction');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] - Contains auto-submit script: $hasAutoSubmit');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] - Contains Cashfree action: $hasCashfreeAction');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] - Contains redirect script: $hasAutoSubmit');
       
       try {
         await controller.loadHtmlString(
@@ -288,57 +276,6 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
     }
   }
 
-  void _checkPaymentCallback(String url) {
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] 🔍 CHECKING PAYMENT CALLBACK');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] URL: $url');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] URL Length: ${url.length}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Contains /payments/success: ${url.contains('/payments/success')}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Contains /payments/failure: ${url.contains('/payments/failure')}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Contains /payments/cancel: ${url.contains('/payments/cancel')}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Contains secure.payu.in: ${url.contains('secure.payu.in')}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Contains test.payu.in: ${url.contains('test.payu.in')}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Contains cloudfunctions.net: ${url.contains('cloudfunctions.net')}');
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] Is mounted: $mounted');
-    
-    if (url.contains('/payments/success')) {
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅✅✅ PAYMENT SUCCESS DETECTED ✅✅✅');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-      if (mounted) {
-        AppLogger.d('💳 [PAYMENT_WEBVIEW] Showing success message and popping...');
-        SnackbarUtils.showSuccess(context, 'Payment successful!');
-        context.pop(true);
-      } else {
-        AppLogger.w('💳 [PAYMENT_WEBVIEW] ⚠️ Widget not mounted, cannot show success');
-      }
-    } else if (url.contains('/payments/failure')) {
-      AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
-      AppLogger.e('💳 [PAYMENT_WEBVIEW] ❌❌❌ PAYMENT FAILED DETECTED ❌❌❌');
-      AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
-      if (mounted) {
-        AppLogger.e('💳 [PAYMENT_WEBVIEW] Showing error message and popping...');
-        SnackbarUtils.showError(context, 'Payment failed. Please try again.');
-        context.pop(false);
-      } else {
-        AppLogger.w('💳 [PAYMENT_WEBVIEW] ⚠️ Widget not mounted, cannot show error');
-      }
-    } else if (url.contains('/payments/cancel')) {
-      AppLogger.w('💳 [PAYMENT_WEBVIEW] ========================================');
-      AppLogger.w('💳 [PAYMENT_WEBVIEW] 🚫🚫🚫 PAYMENT CANCELLED DETECTED 🚫🚫🚫');
-      AppLogger.w('💳 [PAYMENT_WEBVIEW] ========================================');
-      if (mounted) {
-        AppLogger.w('💳 [PAYMENT_WEBVIEW] Showing cancel message and popping...');
-        SnackbarUtils.showInfo(context, 'Payment cancelled');
-        context.pop(false);
-      } else {
-        AppLogger.w('💳 [PAYMENT_WEBVIEW] ⚠️ Widget not mounted, cannot show cancel');
-      }
-    } else {
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] No payment callback detected - continuing...');
-    }
-    AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -361,7 +298,7 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
                 WebViewWidget(controller: _controller!),
                 if (_isLoading)
                   Container(
-                    color: AppColors.trueBlack,
+                    color: Colors.white,
                     child: const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -382,7 +319,7 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
               ],
             )
           : Container(
-              color: AppColors.trueBlack,
+              color: Colors.white,
               child: const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,

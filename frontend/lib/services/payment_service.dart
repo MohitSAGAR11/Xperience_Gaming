@@ -3,14 +3,14 @@ import '../config/constants.dart';
 import '../core/api_client.dart';
 import '../core/logger.dart';
 
-/// Payment Service - Handles PayU payment integration
+/// Payment Service - Handles Cashfree payment integration
 class PaymentService {
   final ApiClient _apiClient;
 
   PaymentService(this._apiClient);
 
-  /// Initiate PayU payment
-  /// Returns payment URL and parameters to load in WebView
+  /// Initiate Cashfree payment
+  /// Returns payment session ID and order details
   Future<PaymentResponse> initiatePayment({
     required String bookingId,
     required double amount,
@@ -63,16 +63,14 @@ class PaymentService {
       
       if (paymentResponse.success && paymentResponse.data != null) {
         AppLogger.d('💳 [PAYMENT_SERVICE] Payment data parsed successfully');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Transaction ID: ${paymentResponse.data!.txnid}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Payment URL: ${paymentResponse.data!.paymentUrl}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Hash length: ${paymentResponse.data!.hash.length}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Amount: ${paymentResponse.data!.amount}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Email: ${paymentResponse.data!.email}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] First Name: ${paymentResponse.data!.firstname}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Product Info: ${paymentResponse.data!.productinfo}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Success URL: ${paymentResponse.data!.surl}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Failure URL: ${paymentResponse.data!.furl}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Cancel URL: ${paymentResponse.data!.curl}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Order ID: ${paymentResponse.data!.orderId}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Payment Session ID: ${paymentResponse.data!.paymentSessionId}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Amount: ${paymentResponse.data!.orderAmount}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Currency: ${paymentResponse.data!.orderCurrency}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Customer Name: ${paymentResponse.data!.customerName}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Customer Email: ${paymentResponse.data!.customerEmail}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Customer Phone: ${paymentResponse.data!.customerPhone}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Return URL: ${paymentResponse.data!.returnUrl}');
         AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
       } else {
         AppLogger.w('💳 [PAYMENT_SERVICE] Payment response indicates failure');
@@ -84,6 +82,37 @@ class PaymentService {
       return PaymentResponse(
         success: false,
         message: 'Payment initialization failed: $e',
+      );
+    }
+  }
+
+  /// Verify payment status after callback
+  Future<PaymentVerifyResponse> verifyPayment({
+    required String orderId,
+  }) async {
+    AppLogger.d('💳 [PAYMENT_SERVICE] Verifying payment for order: $orderId');
+    
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        ApiConstants.verifyPayment,
+        data: {
+          'order_id': orderId,
+        },
+      );
+
+      if (!response.isSuccess || response.data == null) {
+        return PaymentVerifyResponse(
+          success: false,
+          message: response.message ?? 'Payment verification failed',
+        );
+      }
+
+      return PaymentVerifyResponse.fromJson(response.data!);
+    } catch (e, stackTrace) {
+      AppLogger.e('💳 [PAYMENT_SERVICE] Payment verification exception', e, stackTrace);
+      return PaymentVerifyResponse(
+        success: false,
+        message: 'Payment verification failed: $e',
       );
     }
   }
@@ -195,153 +224,132 @@ class PaymentResponse {
   }
 }
 
-/// Payment Data
-class PaymentData {
-  final String key;
-  final String txnid;
-  final String amount;
-  final String productinfo;
-  final String firstname;
-  final String lastname;
-  final String email;
-  final String phone;
-  final String address1;
-  final String address2;
-  final String city;
-  final String state;
-  final String country;
-  final String zipcode;
-  final String surl;
-  final String furl;
-  final String curl;
-  final String hash;
-  final String paymentUrl;
+/// Payment Verify Response
+class PaymentVerifyResponse {
+  final bool success;
+  final String message;
+  final PaymentVerifyData? data;
+
+  PaymentVerifyResponse({
+    required this.success,
+    required this.message,
+    this.data,
+  });
+
+  factory PaymentVerifyResponse.fromJson(Map<String, dynamic> json) {
+    return PaymentVerifyResponse(
+      success: json['success'] ?? false,
+      message: json['message'] ?? '',
+      data: json['data'] != null ? PaymentVerifyData.fromJson(json['data']) : null,
+    );
+  }
+}
+
+/// Payment Verify Data
+class PaymentVerifyData {
   final String bookingId;
+  final String paymentStatus;
+  final String orderId;
+  final String? paymentId;
+
+  PaymentVerifyData({
+    required this.bookingId,
+    required this.paymentStatus,
+    required this.orderId,
+    this.paymentId,
+  });
+
+  factory PaymentVerifyData.fromJson(Map<String, dynamic> json) {
+    return PaymentVerifyData(
+      bookingId: json['bookingId'] ?? '',
+      paymentStatus: json['paymentStatus'] ?? '',
+      orderId: json['orderId'] ?? '',
+      paymentId: json['paymentId'],
+    );
+  }
+}
+
+/// Payment Data (Cashfree)
+class PaymentData {
+  final String orderId;
+  final String paymentSessionId;
+  final String orderAmount;
+  final String orderCurrency;
+  final String customerName;
+  final String customerEmail;
+  final String customerPhone;
+  final String returnUrl;
 
   PaymentData({
-    required this.key,
-    required this.txnid,
-    required this.amount,
-    required this.productinfo,
-    required this.firstname,
-    required this.lastname,
-    required this.email,
-    required this.phone,
-    required this.address1,
-    required this.address2,
-    required this.city,
-    required this.state,
-    required this.country,
-    required this.zipcode,
-    required this.surl,
-    required this.furl,
-    required this.curl,
-    required this.hash,
-    required this.paymentUrl,
-    required this.bookingId,
+    required this.orderId,
+    required this.paymentSessionId,
+    required this.orderAmount,
+    required this.orderCurrency,
+    required this.customerName,
+    required this.customerEmail,
+    required this.customerPhone,
+    required this.returnUrl,
   });
 
   factory PaymentData.fromJson(Map<String, dynamic> json) {
     return PaymentData(
-      key: json['key'] ?? '',
-      txnid: json['txnid'] ?? '',
-      amount: json['amount'] ?? '0',
-      productinfo: json['productinfo'] ?? '',
-      firstname: json['firstname'] ?? '',
-      lastname: json['lastname'] ?? '',
-      email: json['email'] ?? '',
-      phone: json['phone'] ?? '',
-      address1: json['address1'] ?? '',
-      address2: json['address2'] ?? '',
-      city: json['city'] ?? '',
-      state: json['state'] ?? '',
-      country: json['country'] ?? 'IN',
-      zipcode: json['zipcode'] ?? '',
-      surl: json['surl'] ?? '',
-      furl: json['furl'] ?? '',
-      curl: json['curl'] ?? '',
-      hash: json['hash'] ?? '',
-      paymentUrl: json['paymentUrl'] ?? '',
-      bookingId: json['bookingId'] ?? '',
+      orderId: json['orderId'] ?? '',
+      paymentSessionId: json['paymentSessionId'] ?? '',
+      orderAmount: json['orderAmount'] ?? '0',
+      orderCurrency: json['orderCurrency'] ?? 'INR',
+      customerName: json['customerName'] ?? '',
+      customerEmail: json['customerEmail'] ?? '',
+      customerPhone: json['customerPhone'] ?? '',
+      returnUrl: json['returnUrl'] ?? '',
     );
   }
 
-  /// Build PayU payment form HTML
-  String buildPaymentFormHtml() {
-    AppLogger.d('💳 [PAYMENT_FORM] ========================================');
-    AppLogger.d('💳 [PAYMENT_FORM] === BUILDING PAYMENT FORM HTML ===');
-    AppLogger.d('💳 [PAYMENT_FORM] Transaction ID: $txnid');
-    AppLogger.d('💳 [PAYMENT_FORM] Amount: $amount');
-    AppLogger.d('💳 [PAYMENT_FORM] Payment URL: $paymentUrl');
-    
-    // HTML encode values to prevent XSS and ensure proper form submission
-    String htmlEncode(String value) {
-      return value
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#x27;');
-    }
-    
-    AppLogger.d('💳 [PAYMENT_FORM] Creating form fields...');
-    final formFields = [
-      '<input type="hidden" name="key" value="${htmlEncode(key)}">',
-      '<input type="hidden" name="txnid" value="${htmlEncode(txnid)}">',
-      '<input type="hidden" name="amount" value="${htmlEncode(amount)}">',
-      '<input type="hidden" name="productinfo" value="${htmlEncode(productinfo)}">',
-      '<input type="hidden" name="firstname" value="${htmlEncode(firstname)}">',
-      '<input type="hidden" name="lastname" value="${htmlEncode(lastname)}">',
-      '<input type="hidden" name="email" value="${htmlEncode(email)}">',
-      '<input type="hidden" name="phone" value="${htmlEncode(phone)}">',
-      '<input type="hidden" name="address1" value="${htmlEncode(address1)}">',
-      '<input type="hidden" name="address2" value="${htmlEncode(address2)}">',
-      '<input type="hidden" name="city" value="${htmlEncode(city)}">',
-      '<input type="hidden" name="state" value="${htmlEncode(state)}">',
-      '<input type="hidden" name="country" value="${htmlEncode(country)}">',
-      '<input type="hidden" name="zipcode" value="${htmlEncode(zipcode)}">',
-      '<input type="hidden" name="surl" value="${htmlEncode(surl)}">',
-      '<input type="hidden" name="furl" value="${htmlEncode(furl)}">',
-      '<input type="hidden" name="curl" value="${htmlEncode(curl)}">',
-      '<input type="hidden" name="hash" value="${htmlEncode(hash)}">',
-      '<input type="hidden" name="service_provider" value="payu_paisa">',
-    ].join('\n');
-    
-    AppLogger.d('💳 [PAYMENT_FORM] Form fields created');
-    AppLogger.d('💳 [PAYMENT_FORM] Form fields count: ${formFields.split('\n').length}');
-    AppLogger.d('💳 [PAYMENT_FORM] Success URL: $surl');
-    AppLogger.d('💳 [PAYMENT_FORM] Failure URL: $furl');
-    AppLogger.d('💳 [PAYMENT_FORM] Cancel URL: $curl');
-    AppLogger.d('💳 [PAYMENT_FORM] Hash length: ${hash.length}');
 
-    AppLogger.d('💳 [PAYMENT_FORM] Generating HTML document...');
+  /// Build Cashfree payment page HTML (redirects to Cashfree checkout)
+  String buildPaymentPageHtml() {
+    AppLogger.d('💳 [PAYMENT_FORM] ========================================');
+    AppLogger.d('💳 [PAYMENT_FORM] === BUILDING CASHFREE PAYMENT PAGE ===');
+    AppLogger.d('💳 [PAYMENT_FORM] Order ID: $orderId');
+    AppLogger.d('💳 [PAYMENT_FORM] Payment Session ID: $paymentSessionId');
+    AppLogger.d('💳 [PAYMENT_FORM] Amount: ₹$orderAmount');
+
+    // Use Cashfree JavaScript SDK for checkout (recommended approach)
+    // This avoids 404 errors and uses Cashfree's official integration method
+    final isSandbox = true; // Set to false for production
+    
+    AppLogger.d('💳 [PAYMENT_FORM] Generating Cashfree checkout page with SDK...');
     final htmlContent = '''
       <!DOCTYPE html>
       <html>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>PayU Payment</title>
+        <meta charset="UTF-8">
+        <title>Processing Payment</title>
         <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
-            margin: 0;
-            padding: 20px;
-            font-family: Arial, sans-serif;
-            background: #000;
-            color: #fff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
           }
-          .loading {
+          .container {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
             text-align: center;
+            max-width: 400px;
           }
           .spinner {
-            border: 4px solid #333;
-            border-top: 4px solid #00ffff;
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
           }
@@ -349,45 +357,70 @@ class PaymentData {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
+          h2 { color: #333; margin-bottom: 16px; font-size: 24px; }
+          p { color: #666; line-height: 1.6; }
+          .amount { 
+            font-size: 32px; 
+            font-weight: bold; 
+            color: #667eea; 
+            margin: 20px 0;
+          }
         </style>
+        <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
       </head>
       <body>
-        <div class="loading">
+        <div class="container">
           <div class="spinner"></div>
-          <p>Redirecting to payment gateway...</p>
+          <h2>Loading Payment Gateway</h2>
+          <div class="amount">₹$orderAmount</div>
+          <p>Please wait while we load Cashfree secure payment page...</p>
+          <p style="font-size: 12px; margin-top: 20px; color: #999;">
+            Do not close this window or press back button
+          </p>
         </div>
-        <form id="payuForm" action="$paymentUrl" method="post" enctype="application/x-www-form-urlencoded" style="display: none;">
-          $formFields
-        </form>
         <script>
           console.log('💳 [WEBVIEW] ========================================');
-          console.log('💳 [WEBVIEW] PayU Form Submission Starting...');
-          console.log('💳 [WEBVIEW] Form Action:', document.getElementById('payuForm').action);
-          console.log('💳 [WEBVIEW] Form Method:', document.getElementById('payuForm').method);
-          console.log('💳 [WEBVIEW] Form Fields Count:', document.getElementById('payuForm').elements.length);
+          console.log('💳 [WEBVIEW] Cashfree Payment Initialization Starting...');
+          console.log('💳 [WEBVIEW] Order ID: $orderId');
+          console.log('💳 [WEBVIEW] Payment Session ID: $paymentSessionId');
+          console.log('💳 [WEBVIEW] Sandbox Mode: $isSandbox');
           
-          // Log all form values for debugging
-          const form = document.getElementById('payuForm');
-          const formData = new FormData(form);
-          console.log('💳 [WEBVIEW] Form Data:');
-          for (let [key, value] of formData.entries()) {
-            // Mask sensitive data
-            if (key === 'hash') {
-              console.log(key + ':', value.substring(0, 20) + '...' + value.substring(value.length - 10));
-            } else {
-              console.log(key + ':', value);
+          // Initialize Cashfree SDK
+          function initializeCashfree() {
+            try {
+              if (typeof Cashfree === 'undefined') {
+                console.error('💳 [WEBVIEW] Cashfree SDK not loaded, retrying...');
+                setTimeout(initializeCashfree, 500);
+                return;
+              }
+              
+              console.log('💳 [WEBVIEW] Initializing Cashfree SDK...');
+              const cashfree = Cashfree({
+                mode: "${isSandbox ? 'sandbox' : 'production'}"
+              });
+              
+              console.log('💳 [WEBVIEW] Opening Cashfree checkout...');
+              cashfree.checkout({
+                paymentSessionId: "$paymentSessionId",
+                redirectTarget: "_self"
+              });
+              
+              console.log('💳 [WEBVIEW] ✅ Checkout initiated');
+              console.log('💳 [WEBVIEW] ========================================');
+            } catch (error) {
+              console.error('💳 [WEBVIEW] Error initializing Cashfree:', error);
+              // Fallback to direct URL redirect if SDK fails
+              console.log('💳 [WEBVIEW] Falling back to direct URL redirect...');
+              const checkoutUrl = 'https://sandbox.cashfree.com/pg/checkout/payment_session_id/$paymentSessionId';
+              window.location.href = checkoutUrl;
             }
           }
           
-          // Submit form
-          try {
-            console.log('💳 [WEBVIEW] Submitting form to PayU...');
-            document.getElementById('payuForm').submit();
-            console.log('💳 [WEBVIEW] ✅ Form submitted successfully');
-            console.log('💳 [WEBVIEW] ========================================');
-          } catch (error) {
-            console.error('💳 [WEBVIEW] ❌ Form submission error:', error);
-            console.error('💳 [WEBVIEW] ========================================');
+          // Wait for SDK to load, then initialize
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeCashfree);
+          } else {
+            setTimeout(initializeCashfree, 500);
           }
         </script>
       </body>
@@ -396,11 +429,12 @@ class PaymentData {
     
     AppLogger.d('💳 [PAYMENT_FORM] HTML document generated');
     AppLogger.d('💳 [PAYMENT_FORM] Total HTML length: ${htmlContent.length} characters');
-    AppLogger.d('💳 [PAYMENT_FORM] ✅ PAYMENT FORM HTML READY');
+    AppLogger.d('💳 [PAYMENT_FORM] ✅ CASHFREE PAYMENT PAGE READY');
     AppLogger.d('💳 [PAYMENT_FORM] ========================================');
     
     return htmlContent;
   }
+
 }
 
 /// Refund Response

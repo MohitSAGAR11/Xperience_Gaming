@@ -23,6 +23,7 @@ import '../screens/owner/bookings/cafe_bookings_screen.dart';
 import '../screens/owner/profile/owner_profile_screen.dart';
 import '../screens/owner/profile/edit_profile_screen.dart' as owner;
 import '../screens/owner/earnings/earnings_analytics_screen.dart';
+import '../screens/owner/verification/verification_pending_screen.dart';
 
 /// Route Names
 class Routes {
@@ -52,6 +53,7 @@ class Routes {
   static const String editOwnerProfile = '/owner/profile/edit';
   static const String earningsAnalytics = '/owner/earnings-analytics';
   static const String ownerHelpSupport = '/owner/help-support';
+  static const String verificationPending = '/owner/verification-pending';
 }
 
 /// Router Configuration
@@ -203,6 +205,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.ownerHelpSupport,
         name: 'ownerHelpSupport',
         builder: (context, state) => const HelpSupportScreen(),
+      ),
+      GoRoute(
+        path: Routes.verificationPending,
+        name: 'verificationPending',
+        builder: (context, state) => const VerificationPendingScreen(),
       ),
     ],
     

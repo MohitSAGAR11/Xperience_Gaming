@@ -129,7 +129,14 @@ class OwnerDashboardScreen extends ConsumerWidget {
                       child: _QuickAction(
                         icon: Icons.add_business,
                         title: 'Add Cafe',
-                        onTap: () => context.push(Routes.addCafe),
+                        onTap: () {
+                          final currentUser = ref.read(currentUserProvider);
+                          if (currentUser != null && currentUser.isOwner && !currentUser.isVerifiedOwner) {
+                            context.push(Routes.verificationPending);
+                          } else {
+                            context.push(Routes.addCafe);
+                          }
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -200,7 +207,14 @@ class OwnerDashboardScreen extends ConsumerWidget {
                             GlowButton(
                               text: 'Add Cafe',
                               isExpanded: false,
-                              onPressed: () => context.push(Routes.addCafe),
+                              onPressed: () {
+                                final currentUser = ref.read(currentUserProvider);
+                                if (currentUser != null && currentUser.isOwner && !currentUser.isVerifiedOwner) {
+                                  context.push(Routes.verificationPending);
+                                } else {
+                                  context.push(Routes.addCafe);
+                                }
+                              },
                             ),
                           ],
                         ),

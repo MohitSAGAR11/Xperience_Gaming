@@ -50,12 +50,15 @@ const createProfile = async (req, res) => {
 
     // Create user profile in Firestore
     console.log('🔐 [CREATE_PROFILE] Creating new profile...');
+    const userRole = role || 'client';
     const userData = {
       name,
       email,
-      role: role || 'client',
+      role: userRole,
       phone: phone || null,
       avatar: null,
+      // Set verified to false for owners (default), null/undefined for clients
+      verified: userRole === 'owner' ? false : undefined,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -326,6 +329,8 @@ const googleSignIn = async (req, res) => {
         role: role,
         phone: null,
         avatar: null,
+        // Set verified to false for owners (default), undefined for clients
+        verified: role === 'owner' ? false : undefined,
         createdAt: new Date(),
         updatedAt: new Date()
       };

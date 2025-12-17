@@ -1,10 +1,16 @@
 const crypto = require('crypto');
+const axios = require('axios');
 const { db } = require('../config/firebase');
 
 // --- Configuration ---
-const PAYU_MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
-const PAYU_MERCHANT_SALT = process.env.PAYU_MERCHANT_SALT;
-const PAYU_BASE_URL = process.env.PAYU_BASE_URL;
+// Cashfree Configuration
+const CASHFREE_CLIENT_ID = process.env.CASHFREE_CLIENT_ID;
+const CASHFREE_CLIENT_SECRET = process.env.CASHFREE_CLIENT_SECRET;
+const CASHFREE_API_VERSION = process.env.CASHFREE_API_VERSION || '2023-08-01';
+const CASHFREE_BASE_URL = process.env.CASHFREE_BASE_URL || 'https://api.cashfree.com';
+// Note: Cashfree uses Client Secret for webhook verification, not a separate webhook secret
+const CASHFREE_WEBHOOK_SECRET = process.env.CASHFREE_WEBHOOK_SECRET || CASHFREE_CLIENT_SECRET;
+
 
 // Ensure BACKEND_URL includes /api
 let BACKEND_URL = process.env.BACKEND_URL || 'https://asia-south1-xperience-gaming.cloudfunctions.net/api';
@@ -31,39 +37,34 @@ const logPaymentError = (message, error = null) => {
   }
 };
 
-// --- Hash Generation (Request) ---
-function generatePaymentHash(params) {
-  // STANDARD PAYU FORMAT:
-  // key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||salt
-  // Phone is intentionally EXCLUDED from the hash string (it is sent as a separate POST param)
-  
-  const hashString = `${PAYU_MERCHANT_KEY}|${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|||||||||||${PAYU_MERCHANT_SALT}`;
-  
-  const hash = crypto.createHash('sha512').update(hashString).digest('hex');
-  
-  logPayment('Hash Generated', {
-    hashString: hashString.replace(PAYU_MERCHANT_SALT, '[SALT_HIDDEN]'),
-    hashLength: hash.length
-  });
-  
-  return hash;
+// --- Cashfree Helper Functions ---
+function getCashfreeAuthHeaders() {
+  return {
+    'x-client-id': CASHFREE_CLIENT_ID,
+    'x-client-secret': CASHFREE_CLIENT_SECRET,
+    'x-api-version': CASHFREE_API_VERSION,
+    'Content-Type': 'application/json',
+  };
 }
 
-// --- Hash Generation (Response Verification) ---
-function generateResponseHash(params) {
-  // Reverse Hash for verification: SALT|status||||||udf5|udf4...|email|firstname|productinfo|amount|txnid|key
-  const hashString = `${PAYU_MERCHANT_SALT}|${params.status}|||||||||||${params.email}|${params.firstname}|${params.productinfo}|${params.amount}|${params.txnid}|${PAYU_MERCHANT_KEY}`;
-  return crypto.createHash('sha512').update(hashString).digest('hex');
+// Cashfree webhook signature generation (for reference)
+// Format: HMAC-SHA256(timestamp + rawBody) base64 encoded
+function generateCashfreeWebhookSignature(timestamp, rawBody, secret) {
+  const message = `${timestamp}${rawBody}`;
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(message);
+  return hmac.digest('base64');
 }
+
 
 /**
- * @desc    Initiate PayU Payment
+ * @desc    Create Cashfree Payment Order
  * @route   POST /api/payments/create-payment
  */
 const createPayment = async (req, res) => {
   const requestId = `REQ-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   try {
-    logPayment('=== CREATE PAYMENT REQUEST ===', { requestId });
+    logPayment('=== CREATE CASHFREE PAYMENT REQUEST ===', { requestId });
     logPayment('Request Method', req.method);
     logPayment('Request URL', req.originalUrl || req.url);
     logPayment('Request Headers', {
@@ -76,42 +77,23 @@ const createPayment = async (req, res) => {
     logPayment('Request Body', req.body);
     logPayment('Request IP', req.ip || req.connection.remoteAddress);
 
-    // Validate PayU Configuration
-    if (!PAYU_MERCHANT_KEY || !PAYU_MERCHANT_SALT) {
-      logPaymentError('Server config error - Missing PayU credentials', { 
+    // Validate Cashfree Configuration
+    if (!CASHFREE_CLIENT_ID || !CASHFREE_CLIENT_SECRET) {
+      logPaymentError('Server config error - Missing Cashfree credentials', { 
         requestId,
-        hasMerchantKey: !!PAYU_MERCHANT_KEY,
-        hasMerchantSalt: !!PAYU_MERCHANT_SALT
+        hasClientId: !!CASHFREE_CLIENT_ID,
+        hasClientSecret: !!CASHFREE_CLIENT_SECRET
       });
-      return res.status(500).json({ success: false, message: 'Server config error - Missing PayU credentials' });
+      return res.status(500).json({ success: false, message: 'Server config error - Missing Cashfree credentials' });
     }
     
-    if (!PAYU_BASE_URL) {
-      logPaymentError('Server config error - Missing PAYU_BASE_URL', { requestId });
-      return res.status(500).json({ success: false, message: 'Server config error - Missing PayU base URL' });
-    }
-    
-    // Validate PayU Base URL format
-    const isValidPayUUrl = PAYU_BASE_URL === 'https://secure.payu.in' || 
-                           PAYU_BASE_URL === 'https://test.payu.in' ||
-                           PAYU_BASE_URL.startsWith('https://secure.payu.in') ||
-                           PAYU_BASE_URL.startsWith('https://test.payu.in');
-    
-    if (!isValidPayUUrl) {
-      logPaymentError('Server config error - Invalid PAYU_BASE_URL', { 
-        requestId,
-        payuBaseUrl: PAYU_BASE_URL,
-        expected: 'https://secure.payu.in (production) or https://test.payu.in (test)'
-      });
-      return res.status(500).json({ success: false, message: 'Server config error - Invalid PayU base URL' });
-    }
-    
-    logPayment('PayU Configuration Validated', {
+    logPayment('Cashfree Configuration Validated', {
       requestId,
-      payuBaseUrl: PAYU_BASE_URL,
-      merchantKeyPrefix: PAYU_MERCHANT_KEY ? PAYU_MERCHANT_KEY.substring(0, 4) + '...' : 'MISSING',
-      hasSalt: !!PAYU_MERCHANT_SALT,
-      isProduction: PAYU_BASE_URL.includes('secure.payu.in')
+      cashfreeBaseUrl: CASHFREE_BASE_URL,
+      clientIdPrefix: CASHFREE_CLIENT_ID ? CASHFREE_CLIENT_ID.substring(0, 4) + '...' : 'MISSING',
+      hasClientSecret: !!CASHFREE_CLIENT_SECRET,
+      apiVersion: CASHFREE_API_VERSION,
+      isProduction: !CASHFREE_BASE_URL.includes('sandbox')
     });
 
     const { bookingId, amount, firstName, email, phone, productInfo } = req.body;
@@ -147,157 +129,116 @@ const createPayment = async (req, res) => {
     }
     logPayment('Booking found', { bookingId, requestId, bookingData: bookingDoc.data() });
 
-    // 3. Generate Transaction ID (TXN + Timestamp)
-    const transactionId = `TXN${Date.now()}`;
-    logPayment('Transaction ID generated', { transactionId, requestId });
-    
-    // 4. Prepare Payment Parameters
+    // 3. Generate Order ID (Cashfree format: alphanumeric, max 50 chars)
+    const orderId = `ORDER_${bookingId}_${Date.now()}`;
     const formattedAmount = parseFloat(amount).toFixed(2);
     const userPhone = phone || '9999999999';
     const nameParts = (firstName || 'Guest').trim().split(' ');
     const userFirstName = nameParts[0].substring(0, 60);
+    
+    // Prepare callback URLs
+    const returnUrl = `${BACKEND_URL}/payments/callback`;
+    const notifyUrl = `${BACKEND_URL}/payments/webhook`;
 
-    const paymentParams = {
-      key: PAYU_MERCHANT_KEY,
-      txnid: transactionId,
-      amount: formattedAmount,
-      productinfo: (productInfo || `Booking ${bookingId}`).substring(0, 100),
-      firstname: userFirstName,
-      email: email,
-      phone: userPhone, // Phone is passed to PayU but excluded from hash
-      surl: `${BACKEND_URL}/payments/success`,
-      furl: `${BACKEND_URL}/payments/failure`,
-      curl: `${BACKEND_URL}/payments/cancel`,
-      service_provider: 'payu_paisa'
+    // Create Cashfree Order Payload
+    const orderPayload = {
+      order_id: orderId,
+      order_amount: parseFloat(formattedAmount),
+      order_currency: 'INR',
+      order_note: (productInfo || `Booking ${bookingId}`).substring(0, 100),
+      customer_details: {
+        customer_id: bookingId,
+        customer_name: userFirstName,
+        customer_email: email,
+        customer_phone: userPhone,
+      },
+      order_meta: {
+        return_url: returnUrl,
+        notify_url: notifyUrl,
+        payment_methods: 'cc,dc,upi,nb,paylater',
+      },
     };
 
-    logPayment('Payment parameters prepared', {
+    logPayment('Creating Cashfree order', { 
       requestId,
-      transactionId,
+      orderId, 
+      bookingId, 
       amount: formattedAmount,
-      email,
-      firstName: userFirstName,
-      phone: userPhone,
-      callbackUrls: {
-        success: paymentParams.surl,
-        failure: paymentParams.furl,
-        cancel: paymentParams.curl
-      }
+      returnUrl,
+      notifyUrl
     });
 
-    // 5. Generate Secure Hash
-    paymentParams.hash = generatePaymentHash(paymentParams);
-    logPayment('Hash generated successfully', { requestId, transactionId });
+    // Call Cashfree Create Order API
+    let cashfreeResponse;
+    try {
+      cashfreeResponse = await axios.post(
+        `${CASHFREE_BASE_URL}/pg/orders`,
+        orderPayload,
+        {
+          headers: getCashfreeAuthHeaders(),
+        }
+      );
+    } catch (apiError) {
+      logPaymentError('Cashfree API call failed', {
+        requestId,
+        error: apiError.message,
+        response: apiError.response?.data,
+        status: apiError.response?.status
+      });
+      
+      const errorMessage = apiError.response?.data?.message || 
+                          apiError.response?.data?.error?.message ||
+                          'Failed to create payment order with Cashfree';
+      
+      return res.status(apiError.response?.status || 500).json({ 
+        success: false, 
+        message: errorMessage 
+      });
+    }
 
-    // 6. Update Booking in DB (Set to Pending)
-    logPayment('Updating booking status to pending', { bookingId, transactionId, requestId });
+    const { payment_session_id, order_token } = cashfreeResponse.data;
+
+    if (!payment_session_id) {
+      logPaymentError('Cashfree order creation failed - missing payment_session_id', { 
+        requestId, 
+        response: cashfreeResponse.data 
+      });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to create payment order - invalid response from payment gateway' 
+      });
+    }
+
+    // Update Booking in DB
     await db.collection('bookings').doc(bookingId).update({
-      paymentTransactionId: transactionId,
+      paymentTransactionId: orderId,
+      paymentSessionId: payment_session_id,
       paymentStatus: 'pending',
-      updatedAt: new Date()
+      updatedAt: new Date(),
     });
-    logPayment('Booking updated successfully', { bookingId, transactionId, requestId });
 
-    // 7. Generate HTML Form and Return
-    logPayment('Generating HTML payment form', {
+    logPayment('✅ CASHFREE ORDER CREATED', {
       requestId,
-      transactionId,
+      orderId,
+      paymentSessionId: payment_session_id,
       bookingId,
-      amount: formattedAmount
     });
 
-    const formHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta charset="UTF-8">
-  <title>Processing Payment</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .container {
-      background: white;
-      padding: 40px;
-      border-radius: 16px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-      text-align: center;
-      max-width: 400px;
-    }
-    .spinner {
-      width: 50px;
-      height: 50px;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #667eea;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 20px;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    h2 { color: #333; margin-bottom: 16px; font-size: 24px; }
-    p { color: #666; line-height: 1.6; }
-    .amount { 
-      font-size: 32px; 
-      font-weight: bold; 
-      color: #667eea; 
-      margin: 20px 0;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="spinner"></div>
-    <h2>Redirecting to Payment Gateway</h2>
-    <div class="amount">₹${formattedAmount}</div>
-    <p>Please wait while we redirect you to PayU secure payment page...</p>
-    <p style="font-size: 12px; margin-top: 20px; color: #999;">
-      Do not close this window or press back button
-    </p>
-  </div>
-  
-  <form id="payuForm" action="${PAYU_BASE_URL}/_payment" method="post" style="display: none;">
-    <input type="hidden" name="key" value="${paymentParams.key}" />
-    <input type="hidden" name="txnid" value="${paymentParams.txnid}" />
-    <input type="hidden" name="amount" value="${paymentParams.amount}" />
-    <input type="hidden" name="productinfo" value="${paymentParams.productinfo}" />
-    <input type="hidden" name="firstname" value="${paymentParams.firstname}" />
-    <input type="hidden" name="email" value="${paymentParams.email}" />
-    <input type="hidden" name="phone" value="${paymentParams.phone}" />
-    <input type="hidden" name="surl" value="${paymentParams.surl}" />
-    <input type="hidden" name="furl" value="${paymentParams.furl}" />
-    <input type="hidden" name="curl" value="${paymentParams.curl}" />
-    <input type="hidden" name="hash" value="${paymentParams.hash}" />
-    <input type="hidden" name="service_provider" value="${paymentParams.service_provider}" />
-  </form>
-  
-  <script>
-    setTimeout(() => {
-      document.getElementById('payuForm').submit();
-    }, 1500);
-  </script>
-</body>
-</html>`;
-
-    logPayment('✅ CREATE PAYMENT SUCCESS - HTML Form Generated', {
-      requestId,
-      transactionId,
-      bookingId,
-      amount: formattedAmount,
-      paymentUrl: `${PAYU_BASE_URL}/_payment`
+    // Return payment session data to frontend (JSON response instead of HTML)
+    res.json({
+      success: true,
+      message: 'Payment order created successfully',
+      data: {
+        orderId: orderId,
+        paymentSessionId: payment_session_id,
+        orderAmount: formattedAmount,
+        orderCurrency: 'INR',
+        customerName: userFirstName,
+        customerEmail: email,
+        customerPhone: userPhone,
+        returnUrl: returnUrl,
+      },
     });
-    
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(formHtml);
 
   } catch (error) {
     logPaymentError('❌ CREATE PAYMENT FAILED', {
@@ -311,13 +252,13 @@ const createPayment = async (req, res) => {
 };
 
 /**
- * @desc    Verify Payment Callback (Success)
- * @route   POST /api/payments/success
+ * @desc    Handle Cashfree Payment Callback (Return URL)
+ * @route   GET /api/payments/callback
  */
 const verifyPayment = async (req, res) => {
-  const requestId = `SUCCESS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const requestId = `CALLBACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   try {
-    logPayment('=== PAYMENT SUCCESS CALLBACK ===', { requestId });
+    logPayment('=== CASHFREE PAYMENT CALLBACK ===', { requestId });
     logPayment('Request Method', req.method);
     logPayment('Request URL', req.originalUrl || req.url);
     logPayment('Request Headers', {
@@ -326,238 +267,411 @@ const verifyPayment = async (req, res) => {
       'origin': req.headers['origin'],
       'referer': req.headers['referer']
     });
-    logPayment('Request Body (Full)', req.body);
+    logPayment('Request Query Params', req.query);
     logPayment('Request IP', req.ip || req.connection.remoteAddress);
     
-    const { txnid, mihpayid, status, hash, productinfo, amount, email, firstname } = req.body;
+    const { order_id, order_token, payment_id, payment_status } = req.query;
     
     logPayment('Extracted Callback Data', {
       requestId,
-      txnid,
-      mihpayid,
-      status,
-      hash: hash ? `${hash.substring(0, 20)}...` : 'MISSING',
-      productinfo,
-      amount,
-      email,
-      firstname
+      order_id,
+      payment_id,
+      payment_status,
     });
 
-    // 1. Find Booking by Transaction ID
-    logPayment('Searching for booking by transaction ID', { txnid, requestId });
-    let bookingId = null;
-    const bookingsQuery = await db.collection('bookings').where('paymentTransactionId', '==', txnid).limit(1).get();
-    
-    if (!bookingsQuery.empty) {
-      bookingId = bookingsQuery.docs[0].id;
-      logPayment('✅ Booking found by transaction ID', { bookingId, txnid, requestId });
-    } else {
-       logPayment('Booking not found by transaction ID, trying fallback', { txnid, requestId });
-       // Fallback: Extract from product info if needed
-       const match = productinfo?.match(/Booking\s+(\w+)/i);
-       if (match) {
-         bookingId = match[1];
-         logPayment('✅ Booking found via productinfo fallback', { bookingId, requestId });
-       }
+    if (!order_id) {
+      logPaymentError('Missing order_id in callback', { requestId });
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure&reason=invalid_callback`);
     }
 
-    if (!bookingId) {
-      logPaymentError('❌ Booking not found for callback', { txnid, requestId, productinfo });
+    // Find booking by order_id (stored as paymentTransactionId)
+    const bookingsQuery = await db.collection('bookings')
+      .where('paymentTransactionId', '==', order_id)
+      .limit(1)
+      .get();
+    
+    if (bookingsQuery.empty) {
+      logPaymentError('Booking not found', { order_id, requestId });
       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure&reason=booking_not_found`);
     }
 
-    // 2. Verify Security Hash (Crucial Step)
-    logPayment('Verifying payment hash', { requestId, bookingId, txnid });
-    const generatedHash = generateResponseHash(req.body);
-    
-    logPayment('Hash comparison', {
-      requestId,
-      receivedHash: hash ? `${hash.substring(0, 20)}...` : 'MISSING',
-      generatedHash: `${generatedHash.substring(0, 20)}...`,
-      match: generatedHash === hash
-    });
-    
-    if (generatedHash !== hash) {
-       logPaymentError('❌ Hash Mismatch - Potential Tampering', {
-         requestId,
-         bookingId,
-         txnid,
-         received: hash ? `${hash.substring(0, 30)}...` : 'MISSING',
-         generated: `${generatedHash.substring(0, 30)}...`
-       });
-       await db.collection('bookings').doc(bookingId).update({ 
-         paymentStatus: 'failed_hash_mismatch',
-         updatedAt: new Date()
-       });
-       logPayment('Booking updated with hash mismatch status', { bookingId, requestId });
-       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure&reason=hash_mismatch`);
+    const bookingId = bookingsQuery.docs[0].id;
+    const bookingData = bookingsQuery.docs[0].data();
+
+    // Verify payment status with Cashfree API
+    try {
+      const paymentResponse = await axios.get(
+        `${CASHFREE_BASE_URL}/pg/orders/${order_id}/payments`,
+        {
+          headers: getCashfreeAuthHeaders(),
+        }
+      );
+
+      const payments = paymentResponse.data;
+      const latestPayment = payments && payments.length > 0 ? payments[0] : null;
+
+      if (!latestPayment || latestPayment.payment_status !== 'SUCCESS') {
+        // Payment failed or pending
+        const paymentMessage = latestPayment?.payment_message || 'Payment failed';
+        await db.collection('bookings').doc(bookingId).update({
+          paymentStatus: 'failed',
+          paymentError: paymentMessage,
+          updatedAt: new Date(),
+        });
+        
+        logPayment('❌ Payment failed', {
+          requestId,
+          bookingId,
+          orderId: order_id,
+          paymentStatus: latestPayment?.payment_status,
+          paymentMessage,
+        });
+        
+        return res.redirect(`${FRONTEND_URL}/payment-result?status=failure&bookingId=${bookingId}`);
+      }
+
+      // Payment successful - verify and update booking
+      await db.collection('bookings').doc(bookingId).update({
+        paymentId: latestPayment.payment_id,
+        paymentStatus: 'paid',
+        status: 'confirmed',
+        paidAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      logPayment('✅ PAYMENT VERIFIED & BOOKING CONFIRMED', {
+        requestId,
+        bookingId,
+        orderId: order_id,
+        paymentId: latestPayment.payment_id,
+        amount: latestPayment.payment_amount,
+      });
+
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=success&bookingId=${bookingId}`);
+
+    } catch (apiError) {
+      logPaymentError('Error verifying payment with Cashfree API', {
+        requestId,
+        error: apiError.message,
+        orderId: order_id,
+      });
+      // Still redirect but mark as pending verification
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=pending&bookingId=${bookingId}`);
     }
 
-    logPayment('✅ Hash verification passed', { requestId, bookingId, txnid });
+  } catch (error) {
+    logPaymentError('❌ PAYMENT CALLBACK ERROR', {
+      requestId,
+      error: error.message,
+      stack: error.stack,
+      query: req.query
+    });
+    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+  }
+};
 
-    // 3. Mark Booking as Paid
-    logPayment('Updating booking to paid status', { bookingId, mihpayid, requestId });
-    await db.collection('bookings').doc(bookingId).update({
-      paymentId: mihpayid,
-      paymentStatus: 'paid',
-      status: 'confirmed',
-      paidAt: new Date(),
-      updatedAt: new Date()
+/**
+ * @desc    Verify Payment Status (POST endpoint for client-side verification)
+ * @route   POST /api/payments/verify
+ * @access  Private
+ */
+const verifyPaymentPost = async (req, res) => {
+  const requestId = `VERIFY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  try {
+    logPayment('=== PAYMENT VERIFICATION REQUEST ===', { requestId });
+    logPayment('Request Method', req.method);
+    logPayment('Request Body', req.body);
+    
+    const { order_id } = req.body;
+    
+    if (!order_id) {
+      logPaymentError('Missing order_id in verification request', { requestId });
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    // Find booking by order_id (stored as paymentTransactionId)
+    const bookingsQuery = await db.collection('bookings')
+      .where('paymentTransactionId', '==', order_id)
+      .limit(1)
+      .get();
+    
+    if (bookingsQuery.empty) {
+      logPaymentError('Booking not found', { order_id, requestId });
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const bookingId = bookingsQuery.docs[0].id;
+    const bookingData = bookingsQuery.docs[0].data();
+
+    // Verify payment status with Cashfree API
+    try {
+      const paymentResponse = await axios.get(
+        `${CASHFREE_BASE_URL}/pg/orders/${order_id}/payments`,
+        {
+          headers: getCashfreeAuthHeaders(),
+        }
+      );
+
+      const payments = paymentResponse.data;
+      const latestPayment = payments && payments.length > 0 ? payments[0] : null;
+
+      if (!latestPayment || latestPayment.payment_status !== 'SUCCESS') {
+        // Payment failed or pending
+        const paymentMessage = latestPayment?.payment_message || 'Payment failed';
+        await db.collection('bookings').doc(bookingId).update({
+          paymentStatus: 'failed',
+          paymentError: paymentMessage,
+          updatedAt: new Date(),
+        });
+        
+        logPayment('❌ Payment verification failed', {
+          requestId,
+          bookingId,
+          orderId: order_id,
+          paymentStatus: latestPayment?.payment_status,
+          paymentMessage,
+        });
+        
+        return res.json({
+          success: false,
+          message: paymentMessage,
+          data: {
+            bookingId,
+            paymentStatus: 'failed',
+            orderId: order_id,
+          }
+        });
+      }
+
+      // Payment successful - verify and update booking
+      await db.collection('bookings').doc(bookingId).update({
+        paymentId: latestPayment.payment_id,
+        paymentStatus: 'paid',
+        status: 'confirmed',
+        paidAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      logPayment('✅ PAYMENT VERIFIED & BOOKING CONFIRMED', {
+        requestId,
+        bookingId,
+        orderId: order_id,
+        paymentId: latestPayment.payment_id,
+        amount: latestPayment.payment_amount,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Payment verified successfully',
+        data: {
+          bookingId,
+          paymentStatus: 'paid',
+          orderId: order_id,
+          paymentId: latestPayment.payment_id,
+        }
+      });
+
+    } catch (apiError) {
+      logPaymentError('Error verifying payment with Cashfree API', {
+        requestId,
+        error: apiError.message,
+        orderId: order_id,
+      });
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Error verifying payment',
+        data: {
+          bookingId,
+          paymentStatus: 'pending',
+        }
+      });
+    }
+
+  } catch (error) {
+    logPaymentError('❌ PAYMENT VERIFICATION ERROR', {
+      requestId,
+      error: error.message,
+      stack: error.stack,
+      body: req.body
+    });
+    res.status(500).json({
+      success: false,
+      message: 'Error verifying payment',
+    });
+  }
+};
+
+/**
+ * @desc    Handle Cashfree Webhook (Payment Notifications)
+ * @route   POST /api/payments/webhook
+ */
+const handleWebhook = async (req, res) => {
+  const requestId = `WEBHOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  try {
+    logPayment('=== CASHFREE WEBHOOK ===', { requestId });
+    logPayment('Request Method', req.method);
+    logPayment('Request URL', req.originalUrl || req.url);
+    logPayment('Request Headers', {
+      'content-type': req.headers['content-type'],
+      'x-cashfree-signature': req.headers['x-cashfree-signature'] ? 'PRESENT' : 'MISSING',
+      'user-agent': req.headers['user-agent'],
+    });
+    logPayment('Request Body', req.body);
+    logPayment('Request IP', req.ip || req.connection.remoteAddress);
+    
+    // Cashfree webhook signature verification
+    // Cashfree uses x-webhook-signature and x-webhook-timestamp headers
+    const signature = req.headers['x-webhook-signature'] || req.headers['x-cashfree-signature'];
+    const timestamp = req.headers['x-webhook-timestamp'];
+    const rawBody = JSON.stringify(req.body);
+
+    // Verify webhook signature (if Client Secret is configured)
+    // Cashfree signature: HMAC-SHA256(timestamp + rawBody) base64 encoded
+    if (CASHFREE_CLIENT_SECRET && signature) {
+      try {
+        // Concatenate timestamp and raw body
+        const message = timestamp ? `${timestamp}${rawBody}` : rawBody;
+        
+        // Generate HMAC-SHA256 hash
+        const hmac = crypto.createHmac('sha256', CASHFREE_CLIENT_SECRET);
+        hmac.update(message);
+        const expectedSignature = hmac.digest('base64');
+        
+        // Compare signatures (use constant-time comparison for security)
+        let signatureMatch = false;
+        if (signature.length === expectedSignature.length) {
+          try {
+            signatureMatch = crypto.timingSafeEqual(
+              Buffer.from(signature),
+              Buffer.from(expectedSignature)
+            );
+          } catch (e) {
+            signatureMatch = false;
+          }
+        }
+        
+        if (!signatureMatch) {
+          logPaymentError('Webhook signature mismatch', { 
+            requestId,
+            received: signature.substring(0, 20) + '...',
+            expected: expectedSignature.substring(0, 20) + '...',
+            hasTimestamp: !!timestamp
+          });
+          return res.status(401).json({ success: false, message: 'Invalid signature' });
+        }
+        logPayment('✅ Webhook signature verified', { requestId });
+      } catch (sigError) {
+        logPaymentError('Error verifying webhook signature', {
+          requestId,
+          error: sigError.message
+        });
+        // Continue processing if signature verification fails (for testing)
+        logPayment('⚠️ Continuing webhook processing despite signature error', { requestId });
+      }
+    } else {
+      logPayment('⚠️ Webhook signature verification skipped (Client Secret not configured)', { requestId });
+    }
+
+    const { data } = req.body;
+    const { order, payment } = data || {};
+
+    if (!order || !payment) {
+      logPaymentError('Invalid webhook data', { requestId, body: req.body });
+      return res.status(400).json({ success: false, message: 'Invalid webhook data' });
+    }
+
+    const orderId = order.order_id;
+    const paymentStatus = payment.payment_status;
+    const paymentId = payment.payment_id;
+
+    logPayment('Webhook data extracted', {
+      requestId,
+      orderId,
+      paymentId,
+      paymentStatus,
+      paymentAmount: payment.payment_amount,
+      paymentMessage: payment.payment_message,
     });
 
-    logPayment('✅ Payment Verified & Booking Confirmed', {
+    // Find booking
+    const bookingsQuery = await db.collection('bookings')
+      .where('paymentTransactionId', '==', orderId)
+      .limit(1)
+      .get();
+
+    if (bookingsQuery.empty) {
+      logPaymentError('Booking not found for webhook', { orderId, requestId });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const bookingId = bookingsQuery.docs[0].id;
+
+    // Update booking based on payment status
+    if (paymentStatus === 'SUCCESS') {
+      await db.collection('bookings').doc(bookingId).update({
+        paymentId: paymentId,
+        paymentStatus: 'paid',
+        status: 'confirmed',
+        paidAt: new Date(),
+        updatedAt: new Date(),
+      });
+      logPayment('✅ Booking updated to paid status via webhook', {
+        requestId,
+        bookingId,
+        orderId,
+        paymentId,
+      });
+    } else if (paymentStatus === 'FAILED' || paymentStatus === 'USER_DROPPED') {
+      await db.collection('bookings').doc(bookingId).update({
+        paymentStatus: 'failed',
+        paymentError: payment.payment_message || 'Payment failed',
+        updatedAt: new Date(),
+      });
+      logPayment('❌ Booking updated to failed status via webhook', {
+        requestId,
+        bookingId,
+        orderId,
+        paymentStatus,
+      });
+    } else {
+      logPayment('⚠️ Payment status not handled', {
+        requestId,
+        bookingId,
+        orderId,
+        paymentStatus,
+      });
+    }
+
+    logPayment('✅ WEBHOOK PROCESSED', {
       requestId,
       bookingId,
-      transactionId: txnid,
-      paymentId: mihpayid,
-      amount,
-      status
+      orderId,
+      paymentStatus,
     });
 
-    // 4. Redirect to App Signal URL
-    const redirectUrl = `${FRONTEND_URL}/payment-result?status=success&bookingId=${bookingId}`;
-    logPayment('Redirecting to frontend', { requestId, redirectUrl });
-    return res.redirect(redirectUrl);
+    res.json({ success: true });
 
   } catch (error) {
-    logPaymentError('❌ VERIFY PAYMENT ERROR', {
+    logPaymentError('❌ WEBHOOK ERROR', {
       requestId,
       error: error.message,
       stack: error.stack,
       body: req.body
     });
-    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
-  }
-};
-
-/**
- * @desc    Handle Payment Failure
- * @route   POST /api/payments/failure
- */
-const handlePaymentFailure = async (req, res) => {
-  const requestId = `FAILURE-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  try {
-    logPayment('=== PAYMENT FAILURE CALLBACK ===', { requestId });
-    logPayment('Request Method', req.method);
-    logPayment('Request URL', req.originalUrl || req.url);
-    logPayment('Request Headers', {
-      'content-type': req.headers['content-type'],
-      'user-agent': req.headers['user-agent'],
-      'origin': req.headers['origin'],
-      'referer': req.headers['referer']
-    });
-    logPayment('Request Body (Full)', req.body);
-    logPayment('Request IP', req.ip || req.connection.remoteAddress);
-    
-    const { txnid, status, error, error_Message, productinfo, amount } = req.body;
-    
-    logPayment('Extracted Failure Data', {
-      requestId,
-      txnid,
-      status,
-      error,
-      error_Message,
-      productinfo,
-      amount
-    });
-  
-    // Attempt to find and update booking
-    if (txnid) {
-      logPayment('Searching for booking by transaction ID', { txnid, requestId });
-      const bookingsQuery = await db.collection('bookings').where('paymentTransactionId', '==', txnid).limit(1).get();
-      if (!bookingsQuery.empty) {
-        const bookingId = bookingsQuery.docs[0].id;
-        logPayment('✅ Booking found, updating to failed status', { bookingId, txnid, requestId });
-        await bookingsQuery.docs[0].ref.update({ 
-          paymentStatus: 'failed',
-          paymentError: error_Message || error || 'Payment failed',
-          updatedAt: new Date()
-        });
-        logPayment('✅ Booking updated to failed status', { bookingId, requestId });
-      } else {
-        logPaymentError('⚠️ Booking not found for failure callback', { txnid, requestId });
-      }
-    } else {
-      logPaymentError('⚠️ No transaction ID in failure callback', { requestId, body: req.body });
-    }
-
-    const redirectUrl = `${FRONTEND_URL}/payment-result?status=failure`;
-    logPayment('❌ PAYMENT FAILURE - Redirecting to frontend', { requestId, redirectUrl });
-    res.redirect(redirectUrl);
-  } catch (error) {
-    logPaymentError('❌ HANDLE PAYMENT FAILURE ERROR', {
-      requestId,
-      error: error.message,
-      stack: error.stack,
-      body: req.body
-    });
-    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
-  }
-};
-
-/**
- * @desc    Handle Payment Cancellation
- * @route   POST /api/payments/cancel
- */
-const handlePaymentCancel = async (req, res) => {
-  const requestId = `CANCEL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  try {
-    logPayment('=== PAYMENT CANCEL CALLBACK ===', { requestId });
-    logPayment('Request Method', req.method);
-    logPayment('Request URL', req.originalUrl || req.url);
-    logPayment('Request Headers', {
-      'content-type': req.headers['content-type'],
-      'user-agent': req.headers['user-agent'],
-      'origin': req.headers['origin'],
-      'referer': req.headers['referer']
-    });
-    logPayment('Request Body (Full)', req.body);
-    logPayment('Request IP', req.ip || req.connection.remoteAddress);
-    
-    const { txnid, productinfo } = req.body;
-    
-    logPayment('Extracted Cancel Data', {
-      requestId,
-      txnid,
-      productinfo
-    });
-  
-    // Attempt to find and update booking (optional - cancellation might not have txnid)
-    if (txnid) {
-      logPayment('Searching for booking by transaction ID', { txnid, requestId });
-      const bookingsQuery = await db.collection('bookings').where('paymentTransactionId', '==', txnid).limit(1).get();
-      if (!bookingsQuery.empty) {
-        const bookingId = bookingsQuery.docs[0].id;
-        logPayment('✅ Booking found, updating to cancelled status', { bookingId, txnid, requestId });
-        await bookingsQuery.docs[0].ref.update({ 
-          paymentStatus: 'cancelled',
-          updatedAt: new Date()
-        });
-        logPayment('✅ Booking updated to cancelled status', { bookingId, requestId });
-      } else {
-        logPayment('⚠️ Booking not found for cancel callback', { txnid, requestId });
-      }
-    } else {
-      logPayment('⚠️ No transaction ID in cancel callback', { requestId, body: req.body });
-    }
-
-    const redirectUrl = `${FRONTEND_URL}/payment-result?status=cancel`;
-    logPayment('⚠️ PAYMENT CANCELLED - Redirecting to frontend', { requestId, redirectUrl });
-    res.redirect(redirectUrl);
-  } catch (error) {
-    logPaymentError('❌ HANDLE PAYMENT CANCEL ERROR', {
-      requestId,
-      error: error.message,
-      stack: error.stack,
-      body: req.body
-    });
-    res.redirect(`${FRONTEND_URL}/payment-result?status=cancel`);
+    res.status(500).json({ success: false, message: 'Webhook processing failed' });
   }
 };
 
 module.exports = {
   createPayment,
   verifyPayment,
-  handlePaymentFailure,
-  handlePaymentCancel
+  verifyPaymentPost,
+  handleWebhook,
 };

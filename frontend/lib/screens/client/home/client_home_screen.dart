@@ -88,18 +88,6 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
                               ),
                             ],
                           ),
-                          // Notification Icon
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceDark,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.notifications_outlined,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 24),

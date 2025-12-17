@@ -36,6 +36,7 @@ class ApiConstants {
   // Payment Endpoints
   static const String payments = '/payments';
   static const String createPayment = '/payments/create-payment';
+  static const String verifyPayment = '/payments/verify';
   static const String refund = '/payments'; // /payments/:bookingId/refund
   static const String refundStatus = '/payments'; // /payments/:bookingId/refund-status
 }

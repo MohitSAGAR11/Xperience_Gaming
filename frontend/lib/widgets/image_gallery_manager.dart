@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image/image.dart' as img;
 
 import '../../config/theme.dart';
 import '../../services/image_upload_service.dart';
@@ -48,7 +50,13 @@ class _ImageGalleryManagerState extends ConsumerState<ImageGalleryManager> {
       );
 
       if (image != null) {
+        // Crop to landscape aspect ratio (16:9)
+        final croppedImage = await _cropToLandscape(File(image.path));
+        if (croppedImage != null) {
+          await _uploadImage(croppedImage);
+        } else {
         await _uploadImage(File(image.path));
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -60,20 +68,80 @@ class _ImageGalleryManagerState extends ConsumerState<ImageGalleryManager> {
   Future<void> _pickMultipleImages() async {
     try {
       final List<XFile> images = await _picker.pickMultiImage(
-        maxWidth: 1920,
-        maxHeight: 1080,
         imageQuality: 85,
       );
 
       if (images.isNotEmpty) {
         for (final image in images) {
+          // Crop to landscape aspect ratio (16:9)
+          final croppedImage = await _cropToLandscape(File(image.path));
+          if (croppedImage != null) {
+            await _uploadImage(croppedImage);
+          } else {
           await _uploadImage(File(image.path));
+          }
         }
       }
     } catch (e) {
       if (mounted) {
         SnackbarUtils.showError(context, 'Error picking images: $e');
       }
+    }
+  }
+
+  /// Crop image to landscape aspect ratio (16:9)
+  Future<File?> _cropToLandscape(File imageFile) async {
+    try {
+      final bytes = await imageFile.readAsBytes();
+      final originalImage = img.decodeImage(bytes);
+      
+      if (originalImage == null) return null;
+      
+      final originalWidth = originalImage.width;
+      final originalHeight = originalImage.height;
+      final targetAspectRatio = 16 / 9;
+      final currentAspectRatio = originalWidth / originalHeight;
+      
+      int cropWidth = originalWidth;
+      int cropHeight = originalHeight;
+      int cropX = 0;
+      int cropY = 0;
+      
+      if (currentAspectRatio > targetAspectRatio) {
+        // Image is wider than 16:9, crop width
+        cropWidth = (originalHeight * targetAspectRatio).round();
+        cropX = (originalWidth - cropWidth) ~/ 2;
+      } else {
+        // Image is taller than 16:9, crop height
+        cropHeight = (originalWidth / targetAspectRatio).round();
+        cropY = (originalHeight - cropHeight) ~/ 2;
+      }
+      
+      final croppedImage = img.copyCrop(
+        originalImage,
+        x: cropX,
+        y: cropY,
+        width: cropWidth,
+        height: cropHeight,
+      );
+      
+      // Resize to max 1920x1080 while maintaining aspect ratio
+      final resizedImage = img.copyResize(
+        croppedImage,
+        width: 1920,
+        height: 1080,
+        interpolation: img.Interpolation.linear,
+      );
+      
+      // Save to temporary file
+      final croppedBytes = img.encodeJpg(resizedImage, quality: 85);
+      final tempFile = File('${imageFile.path}_cropped.jpg');
+      await tempFile.writeAsBytes(croppedBytes);
+      
+      return tempFile;
+    } catch (e) {
+      // If cropping fails, return null to use original image
+      return null;
     }
   }
 

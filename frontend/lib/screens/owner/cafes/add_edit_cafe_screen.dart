@@ -7,6 +7,7 @@ import '../../../config/routes.dart';
 import '../../../config/constants.dart';
 import '../../../core/utils.dart';
 import '../../../providers/cafe_provider.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../services/cafe_service.dart';
 import '../../../services/location_service.dart';
 import '../../../widgets/custom_button.dart';
@@ -50,10 +51,19 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
   void initState() {
     super.initState();
     
-    if (isEditing) {
-      _loadCafeData();
+    // Check verification status for new cafes
+    if (!isEditing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final user = ref.read(currentUserProvider);
+        if (user != null && user.isOwner && !user.isVerifiedOwner) {
+          context.go(Routes.verificationPending);
+          return;
+        }
+        // Get GPS location automatically for new cafes
+        _getCurrentLocation();
+      });
     } else {
-      _getCurrentLocation();
+      _loadCafeData();
     }
   }
 
@@ -147,7 +157,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
     }
   }
 
-  /// Get current location automatically
+  /// Get current location automatically (fallback if maps link doesn't have coordinates)
   Future<void> _getCurrentLocation() async {
     setState(() {
       _isLocationLoading = true;
@@ -181,9 +191,9 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
   Future<void> _saveCafe() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Validate location is captured
+    // Validate location is captured via GPS
     if (_latitude == null || _longitude == null) {
-      SnackbarUtils.showError(context, 'Please capture your cafe location first');
+      SnackbarUtils.showError(context, 'Please enable location services to capture your cafe location');
       return;
     }
 
@@ -295,131 +305,108 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
                 keyboardType: TextInputType.url,
                 validator: (v) => Validators.validateUrl(v, 'Google Maps link'),
               ),
-              const SizedBox(height: 16),
-              
-              // GPS Location - Auto Captured
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _latitude != null && _longitude != null
-                        ? AppColors.success.withOpacity(0.5)
-                        : _locationError != null
-                            ? Colors.red.withOpacity(0.5)
-                            : AppColors.cardDark,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.gps_fixed,
-                          color: _latitude != null && _longitude != null
-                              ? AppColors.success
-                              : AppColors.textMuted,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'GPS Coordinates',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_isLocationLoading)
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.success,
-                            ),
-                          )
-                        else
-                          TextButton.icon(
-                            onPressed: _getCurrentLocation,
-                            icon: const Icon(
-                              Icons.my_location,
-                              size: 16,
-                              color: AppColors.success,
-                            ),
-                            label: Text(
-                              _latitude != null ? 'Update' : 'Get Location',
-                              style: const TextStyle(
-                                color: AppColors.success,
-                                fontSize: 12,
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 4,
-                              ),
-                            ),
-                          ),
-                      ],
+              const SizedBox(height: 8),
+              if (_latitude != null && _longitude != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.success.withOpacity(0.3),
                     ),
-                    const SizedBox(height: 12),
-                    if (_isLocationLoading)
-                      const Text(
-                        'Getting your current location...',
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 13,
-                        ),
-                      )
-                    else if (_locationError != null)
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        color: AppColors.success,
+                        size: 16,
+                      ),
+                      SizedBox(width: 8),
                       Text(
-                        _locationError!,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 13,
-                        ),
-                      )
-                    else if (_latitude != null && _longitude != null)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _CoordinateDisplay(
-                              label: 'Latitude',
-                              value: _latitude!.toStringAsFixed(6),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _CoordinateDisplay(
-                              label: 'Longitude',
-                              value: _longitude!.toStringAsFixed(6),
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      const Text(
-                        'Tap "Get Location" to capture your cafe\'s coordinates',
+                        'Location captured via GPS',
                         style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 13,
+                          color: AppColors.success,
+                          fontSize: 12,
                         ),
                       ),
-                  ],
+                    ],
+                  ),
+                )
+              else if (_isLocationLoading)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.textMuted.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.neonPurple,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Capturing location...',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.warning.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.location_off,
+                        color: AppColors.warning,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _locationError ?? 'Location not captured. Please enable location services.',
+                          style: const TextStyle(
+                            color: AppColors.warning,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _getCurrentLocation,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'Retry',
+                          style: TextStyle(
+                            color: AppColors.warning,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'We automatically capture your cafe\'s GPS location for distance-based search',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 11,
-                ),
-              ),
               const SizedBox(height: 24),
 
               // Operating Hours Section
@@ -538,59 +525,6 @@ class _SectionHeader extends StatelessWidget {
         fontSize: 18,
         fontWeight: FontWeight.bold,
       ),
-    );
-  }
-}
-
-class _CoordinateDisplay extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _CoordinateDisplay({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 11,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.trueBlack,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.success.withOpacity(0.3)),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.check_circle,
-                color: AppColors.success,
-                size: 14,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                value,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 13,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

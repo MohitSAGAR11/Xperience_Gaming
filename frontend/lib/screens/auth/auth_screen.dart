@@ -54,15 +54,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return Scaffold(
       backgroundColor: AppColors.trueBlack,
       body: Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topCenter,
-            radius: 1.5,
-            colors: [
-              AppColors.neonPurple.withOpacity(0.1),
-              AppColors.trueBlack,
-            ],
-          ),
+        decoration: const BoxDecoration(
+          color: AppColors.trueBlack,
         ),
         child: SafeArea(
           child: Center(
@@ -73,28 +66,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 children: [
                   const SizedBox(height: 40),
                   
-                  // Logo with Glow Effect
+                  // Logo with Sharp Border
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.neonPurple.withOpacity(0.5),
-                          blurRadius: 60,
-                          spreadRadius: 10,
-                        ),
-                        BoxShadow(
-                          color: AppColors.cyberCyan.withOpacity(0.3),
-                          blurRadius: 40,
-                          spreadRadius: 5,
-                        ),
-                      ],
+                      border: Border.all(
+                        color: AppColors.neonPurple.withOpacity(0.3),
+                        width: 2,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.sports_esports,
-                      size: 80,
-                      color: AppColors.textPrimary,
+                    child: Image.asset(
+                      'assets/icons/splash_screen.png',
+                      width: 160,
+                      height: 160,
+                      fit: BoxFit.contain,
                     ),
                   ),
                   
@@ -154,9 +140,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         
                         const SizedBox(height: 20),
                         
-                        // Client Option
+                        // Customer Option
                         _RoleOption(
-                          title: 'Client',
+                          title: 'Customer',
                           description: 'Browse and book gaming cafes',
                           value: AppConstants.roleClient,
                           groupValue: _selectedRole,

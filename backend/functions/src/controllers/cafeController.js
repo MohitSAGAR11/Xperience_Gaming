@@ -69,6 +69,23 @@ const createCafe = async (req, res) => {
       });
     }
 
+    // Check if owner is verified
+    const userDoc = await db.collection('users').doc(req.user.id).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const userData = userDoc.data();
+    if (userData.role === 'owner' && userData.verified !== true) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not verified. Please wait for admin verification to access this feature.'
+      });
+    }
+
     const cafeData = {
       ...req.body,
       ownerId: req.user.id,

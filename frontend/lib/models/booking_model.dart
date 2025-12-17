@@ -17,10 +17,10 @@ class Booking {
   final double totalAmount;
   final String status; // 'pending', 'confirmed', 'cancelled', 'completed'
   final String paymentStatus; // 'unpaid', 'pending', 'paid', 'failed', 'refunded'
-  final String? paymentTransactionId; // PayU txnid
-  final String? paymentId; // PayU mihpayid
-  final String? paymentHash; // PayU hash
-  final String? paymentMethod; // 'payu', 'cash', etc.
+  final String? paymentTransactionId; // Cashfree order_id
+  final String? paymentId; // Cashfree payment_id
+  final String? paymentSessionId; // Cashfree payment_session_id
+  final String? paymentMethod; // 'cashfree', 'cash', etc.
   final DateTime? paidAt;
   final String? refundId;
   final double? refundAmount;
@@ -50,7 +50,7 @@ class Booking {
     required this.paymentStatus,
     this.paymentTransactionId,
     this.paymentId,
-    this.paymentHash,
+    this.paymentSessionId,
     this.paymentMethod,
     this.paidAt,
     this.refundId,
@@ -83,7 +83,7 @@ class Booking {
       paymentStatus: json['paymentStatus'] ?? 'unpaid',
       paymentTransactionId: json['paymentTransactionId'],
       paymentId: json['paymentId'],
-      paymentHash: json['paymentHash'],
+      paymentSessionId: json['paymentSessionId'],
       paymentMethod: json['paymentMethod'],
       paidAt: json['paidAt'] != null ? _parseDateTime(json['paidAt']) : null,
       refundId: json['refundId'],

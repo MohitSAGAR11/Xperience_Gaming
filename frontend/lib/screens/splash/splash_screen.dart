@@ -42,17 +42,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   }
 
   Future<void> _initializeApp() async {
-    // Wait for animation
+    // Wait for animation to complete
     await Future.delayed(const Duration(seconds: 2));
 
-    // Initialize auth state
-    await ref.read(authProvider.notifier).initialize();
+    // Initialize auth state (but don't wait for it to complete)
+    // This allows the splash screen to show briefly then navigate
+    ref.read(authProvider.notifier).initialize();
 
     if (!mounted) return;
 
-    // Navigate based on auth state
+    // Navigate immediately - don't wait for auth initialization
+    // The auth screen will handle showing loading state if needed
     final authState = ref.read(authProvider);
-
+    
     if (authState.isAuthenticated) {
       // User is logged in
       if (authState.isOwner) {
@@ -61,7 +63,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
         context.go(Routes.clientHome);
       }
     } else {
-      // User is not logged in
+      // User is not logged in - go to auth screen
       context.go(Routes.auth);
     }
   }
@@ -77,15 +79,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     return Scaffold(
       backgroundColor: AppColors.trueBlack,
       body: Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.5,
-            colors: [
-              AppColors.neonPurple.withOpacity(0.15),
-              AppColors.trueBlack,
-            ],
-          ),
+        decoration: const BoxDecoration(
+          color: AppColors.trueBlack,
         ),
         child: Center(
           child: AnimatedBuilder(
@@ -98,28 +93,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Logo Container with Glow
+                      // Logo Container with Sharp Border
                       Container(
-                        padding: const EdgeInsets.all(24),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.neonPurple.withOpacity(0.5),
-                              blurRadius: 60,
-                              spreadRadius: 10,
-                            ),
-                            BoxShadow(
-                              color: AppColors.cyberCyan.withOpacity(0.3),
-                              blurRadius: 40,
-                              spreadRadius: 5,
-                            ),
-                          ],
+                          border: Border.all(
+                            color: AppColors.neonPurple.withOpacity(0.3),
+                            width: 2,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.sports_esports,
-                          size: 80,
-                          color: AppColors.textPrimary,
+                        child: Image.asset(
+                          'assets/icons/splash_screen.png',
+                          width: 160,
+                          height: 160,
+                          fit: BoxFit.contain,
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -145,18 +133,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                           fontWeight: FontWeight.w400,
                           color: AppColors.cyberCyan,
                           letterSpacing: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 48),
-                      // Loading indicator
-                      SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            AppColors.neonPurple.withOpacity(0.8),
-                          ),
                         ),
                       ),
                     ],

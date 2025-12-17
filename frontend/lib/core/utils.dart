@@ -258,6 +258,55 @@ class BookingStatusUtils {
   }
 }
 
+/// Maps Link Utilities
+class MapsLinkUtils {
+  /// Extract latitude and longitude from Google Maps link
+  /// Supports multiple formats:
+  /// - https://www.google.com/maps/place/.../@lat,lng,zoom
+  /// - https://maps.google.com/?q=lat,lng
+  /// - https://www.google.com/maps/search/?api=1&query=lat,lng
+  static Map<String, double>? extractCoordinates(String mapsLink) {
+    try {
+      // Format 1: /@lat,lng,zoom
+      final atPattern = RegExp(r'@(-?\d+\.?\d*),(-?\d+\.?\d*)');
+      final atMatch = atPattern.firstMatch(mapsLink);
+      if (atMatch != null) {
+        final lat = double.tryParse(atMatch.group(1)!);
+        final lng = double.tryParse(atMatch.group(2)!);
+        if (lat != null && lng != null) {
+          return {'latitude': lat, 'longitude': lng};
+        }
+      }
+
+      // Format 2: ?q=lat,lng
+      final qPattern = RegExp(r'[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)');
+      final qMatch = qPattern.firstMatch(mapsLink);
+      if (qMatch != null) {
+        final lat = double.tryParse(qMatch.group(1)!);
+        final lng = double.tryParse(qMatch.group(2)!);
+        if (lat != null && lng != null) {
+          return {'latitude': lat, 'longitude': lng};
+        }
+      }
+
+      // Format 3: &query=lat,lng
+      final queryPattern = RegExp(r'[?&]query=(-?\d+\.?\d*),(-?\d+\.?\d*)');
+      final queryMatch = queryPattern.firstMatch(mapsLink);
+      if (queryMatch != null) {
+        final lat = double.tryParse(queryMatch.group(1)!);
+        final lng = double.tryParse(queryMatch.group(2)!);
+        if (lat != null && lng != null) {
+          return {'latitude': lat, 'longitude': lng};
+        }
+      }
+
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+}
+
 /// Snackbar Utilities
 class SnackbarUtils {
   static void showSuccess(BuildContext context, String message) {

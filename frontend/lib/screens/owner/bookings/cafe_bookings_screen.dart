@@ -140,35 +140,6 @@ class CafeBookingsScreen extends ConsumerWidget {
                               fontSize: 18,
                             ),
                           ),
-                          if (booking.status == 'pending')
-                            Row(
-                              children: [
-                                OutlinedButton(
-                                  onPressed: () {
-                                    // TODO: Reject booking
-                                  },
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.error,
-                                    side: const BorderSide(color: AppColors.error),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16),
-                                  ),
-                                  child: const Text('Reject'),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    // TODO: Confirm booking
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.success,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16),
-                                  ),
-                                  child: const Text('Confirm'),
-                                ),
-                              ],
-                            ),
                         ],
                       ),
                     ],

@@ -4,16 +4,18 @@ const { protect } = require('../middleware/authMiddleware');
 const { 
   createPayment, 
   verifyPayment, 
-  handlePaymentFailure, 
-  handlePaymentCancel 
+  verifyPaymentPost,
+  handleWebhook
 } = require('../controllers/paymentController');
 const { initiateRefund, getRefundStatus } = require('../controllers/refundController');
 
 // Payment routes
 router.post('/create-payment', protect, createPayment);
-router.post('/success', verifyPayment); // PayU success callback (no auth needed)
-router.post('/failure', handlePaymentFailure); // PayU failure callback
-router.post('/cancel', handlePaymentCancel); // PayU cancel callback
+router.get('/callback', verifyPayment); // Cashfree callback (GET request with query params)
+router.post('/verify', protect, verifyPaymentPost); // Client-side payment verification (POST)
+router.post('/webhook', handleWebhook); // Cashfree webhook (POST request with signature)
+
+// Refund routes
 router.post('/:bookingId/refund', protect, initiateRefund);
 router.get('/:bookingId/refund-status', protect, getRefundStatus);
 

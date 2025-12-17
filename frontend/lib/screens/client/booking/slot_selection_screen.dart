@@ -11,6 +11,7 @@ import '../../../providers/booking_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/cafe_service.dart';
 import '../../../services/booking_service.dart';
+import '../../../services/payment_service.dart';
 import '../../../models/booking_model.dart';
 import '../../../widgets/custom_button.dart';
 import '../../../widgets/loading_widget.dart';
@@ -488,7 +489,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         
         // Navigate to payment screen and await result
         if (mounted) {
-          final paymentResult = await Navigator.push<bool>(
+          final paymentResult = await Navigator.push<dynamic>(
             context,
             MaterialPageRoute(
               builder: (context) => PaymentScreenWebView(
@@ -507,9 +508,35 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
           
           // Handle payment result
           if (mounted) {
-            if (paymentResult == true) {
-              // Payment successful - fetch updated booking and show success screen
-              AppLogger.d('📅 [SLOT_SELECTION] ✅ Payment successful! Fetching updated booking...');
+            // paymentResult can be: String (orderId), true, false, or null
+            if (paymentResult == true || paymentResult is String) {
+              // Payment completion detected - verify payment
+              final orderId = paymentResult is String ? paymentResult : null;
+              
+              AppLogger.d('📅 [SLOT_SELECTION] ✅ Payment completion detected! Verifying payment...');
+              
+              if (orderId != null) {
+                try {
+                  // Call verify endpoint
+                  final paymentService = ref.read(paymentServiceProvider);
+                  final verifyResponse = await paymentService.verifyPayment(orderId: orderId);
+                  
+                  if (verifyResponse.success) {
+                    AppLogger.d('📅 [SLOT_SELECTION] ✅ Payment verified successfully!');
+                    AppLogger.d('📅 [SLOT_SELECTION] Booking ID: ${verifyResponse.data?.bookingId}');
+                    AppLogger.d('📅 [SLOT_SELECTION] Payment Status: ${verifyResponse.data?.paymentStatus}');
+                  } else {
+                    AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Payment verification failed: ${verifyResponse.message}');
+                    SnackbarUtils.showError(context, verifyResponse.message);
+                  }
+                } catch (e) {
+                  AppLogger.e('📅 [SLOT_SELECTION] Error verifying payment', e);
+                  SnackbarUtils.showError(context, 'Error verifying payment. Please check booking status.');
+                }
+              }
+              
+              // Fetch updated booking and show confirmation
+              AppLogger.d('📅 [SLOT_SELECTION] Fetching updated booking...');
               try {
                 final updatedBooking = await bookingService.getBookingById(response.booking!.id);
                 AppLogger.d('📅 [SLOT_SELECTION] Updated booking fetched: ${updatedBooking != null}');

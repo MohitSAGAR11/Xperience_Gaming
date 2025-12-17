@@ -83,15 +83,174 @@ final dioProvider = Provider<Dio>((ref) {
         return handler.next(response);
       },
       onError: (error, handler) async {
+        AppLogger.d('🌐 [API_CLIENT] ========================================');
+        AppLogger.d('🌐 [API_CLIENT] ERROR HANDLER TRIGGERED');
+        AppLogger.d('🌐 [API_CLIENT] Error type: ${error.runtimeType}');
+        AppLogger.d('🌐 [API_CLIENT] Is DioException: ${error is DioException}');
+        
+        if (error is DioException) {
+          AppLogger.d('🌐 [API_CLIENT] Status code: ${error.response?.statusCode}');
+          AppLogger.d('🌐 [API_CLIENT] Request path: ${error.requestOptions.path}');
+          AppLogger.d('🌐 [API_CLIENT] Request method: ${error.requestOptions.method}');
+        }
+        
         // Handle 401 - Token expired or invalid
         if (error.response?.statusCode == 401) {
-          // Clear cached token on 401
-          clearTokenCache();
-          AppLogger.w('🌐 [API_CLIENT] Token expired (401), clearing cache');
-          // Sign out from Firebase Auth
-          await FirebaseService.auth.signOut();
-          // Navigation to login will be handled by the auth state
+          AppLogger.w('🌐 [API_CLIENT] ========================================');
+          AppLogger.w('🌐 [API_CLIENT] 401 ERROR DETECTED - Token expired');
+          AppLogger.w('🌐 [API_CLIENT] Attempting to refresh token...');
+          
+          // Check if user is still authenticated
+          AppLogger.d('🌐 [API_CLIENT] Step 1: Checking current user...');
+          final currentUser = FirebaseService.currentUser;
+          AppLogger.d('🌐 [API_CLIENT] Current user: ${currentUser != null ? currentUser.uid : "null"}');
+          
+          if (currentUser == null) {
+            // User is not authenticated, sign out
+            AppLogger.w('🌐 [API_CLIENT] Step 1 Result: No current user found');
+            AppLogger.w('🌐 [API_CLIENT] Signing out...');
+            clearTokenCache();
+            await FirebaseService.auth.signOut();
+            AppLogger.w('🌐 [API_CLIENT] Signed out, returning original error');
+            return handler.next(error);
+          }
+          
+          AppLogger.d('🌐 [API_CLIENT] Step 1 Result: User authenticated (${currentUser.uid})');
+          
+          // Try to refresh token and retry request once
+          try {
+            AppLogger.d('🌐 [API_CLIENT] Step 2: Clearing token cache...');
+            // Clear cached token to force refresh
+            clearTokenCache();
+            AppLogger.d('🌐 [API_CLIENT] Token cache cleared');
+            
+            AppLogger.d('🌐 [API_CLIENT] Step 3: Getting fresh token...');
+            // Get fresh token
+            final freshToken = await FirebaseService.getIdToken(forceRefresh: true);
+            AppLogger.d('🌐 [API_CLIENT] Fresh token obtained: ${freshToken != null ? "SUCCESS (length: ${freshToken.length})" : "FAILED"}');
+            
+            if (freshToken == null) {
+              AppLogger.e('🌐 [API_CLIENT] Step 3 Result: Failed to get fresh token');
+              AppLogger.e('🌐 [API_CLIENT] Signing out...');
+              await FirebaseService.auth.signOut();
+              AppLogger.e('🌐 [API_CLIENT] Signed out, returning original error');
+              return handler.next(error);
+            }
+            
+            AppLogger.d('🌐 [API_CLIENT] Step 3 Result: Fresh token obtained successfully');
+            
+            AppLogger.d('🌐 [API_CLIENT] Step 4: Updating cached token...');
+            // Update cached token
+            _cachedToken = freshToken;
+            _tokenExpiry = DateTime.now().add(const Duration(minutes: 50));
+            _cachedUserId = currentUser.uid;
+            AppLogger.d('🌐 [API_CLIENT] Token cache updated');
+            
+            AppLogger.d('🌐 [API_CLIENT] Step 5: Preparing retry request...');
+            // Create a new RequestOptions to avoid modifying the original
+            final originalOptions = error.requestOptions;
+            AppLogger.d('🌐 [API_CLIENT] Original request path: ${originalOptions.path}');
+            AppLogger.d('🌐 [API_CLIENT] Original request method: ${originalOptions.method}');
+            AppLogger.d('🌐 [API_CLIENT] Original request data: ${originalOptions.data}');
+            
+            // Create new headers with fresh token
+            final retryHeaders = Map<String, dynamic>.from(originalOptions.headers);
+            retryHeaders['Authorization'] = 'Bearer $freshToken';
+            
+            AppLogger.d('🌐 [API_CLIENT] Creating new RequestOptions for retry...');
+            final retryOptions = RequestOptions(
+              path: originalOptions.path,
+              method: originalOptions.method,
+              headers: retryHeaders,
+              data: originalOptions.data,
+              queryParameters: originalOptions.queryParameters,
+              baseUrl: originalOptions.baseUrl,
+              contentType: originalOptions.contentType,
+              responseType: originalOptions.responseType,
+              followRedirects: originalOptions.followRedirects,
+              validateStatus: originalOptions.validateStatus,
+              extra: originalOptions.extra,
+              connectTimeout: originalOptions.connectTimeout,
+              receiveTimeout: originalOptions.receiveTimeout,
+              sendTimeout: originalOptions.sendTimeout,
+            );
+            
+            AppLogger.d('🌐 [API_CLIENT] Retry request prepared');
+            AppLogger.d('🌐 [API_CLIENT] Retry URL: ${retryOptions.uri}');
+            AppLogger.d('🌐 [API_CLIENT] Retry method: ${retryOptions.method}');
+            AppLogger.d('🌐 [API_CLIENT] Retry headers: ${retryOptions.headers}');
+            
+            try {
+              AppLogger.d('🌐 [API_CLIENT] Step 6: Executing retry request...');
+              AppLogger.d('🌐 [API_CLIENT] Calling dio.fetch...');
+              
+              final response = await dio.fetch(retryOptions);
+              
+              AppLogger.d('🌐 [API_CLIENT] Step 6 Result: Retry SUCCESS');
+              AppLogger.d('🌐 [API_CLIENT] Retry response status: ${response.statusCode}');
+              AppLogger.d('🌐 [API_CLIENT] Retry response data type: ${response.data.runtimeType}');
+              AppLogger.d('🌐 [API_CLIENT] ========================================');
+              return handler.resolve(response);
+            } catch (retryError, stackTrace) {
+              AppLogger.e('🌐 [API_CLIENT] ========================================');
+              AppLogger.e('🌐 [API_CLIENT] Step 6 Exception caught!');
+              AppLogger.e('🌐 [API_CLIENT] Exception type: ${retryError.runtimeType}');
+              AppLogger.e('🌐 [API_CLIENT] Exception: $retryError');
+              if (retryError is Error) {
+                AppLogger.e('🌐 [API_CLIENT] Error stack trace: ${retryError.stackTrace}');
+              }
+              AppLogger.e('🌐 [API_CLIENT] Catch stack trace: $stackTrace');
+              AppLogger.e('🌐 [API_CLIENT] ========================================');
+              AppLogger.e('🌐 [API_CLIENT] Step 6 Result: Retry FAILED');
+              AppLogger.e('🌐 [API_CLIENT] Retry error type: ${retryError.runtimeType}');
+              AppLogger.e('🌐 [API_CLIENT] Retry error: $retryError');
+              AppLogger.e('🌐 [API_CLIENT] Is DioException: ${retryError is DioException}');
+              
+              // Retry also failed, check if it's still 401
+              if (retryError is DioException) {
+                AppLogger.d('🌐 [API_CLIENT] Retry error is DioException');
+                AppLogger.d('🌐 [API_CLIENT] Retry error status code: ${retryError.response?.statusCode}');
+                
+                if (retryError.response?.statusCode == 401) {
+                  AppLogger.e('🌐 [API_CLIENT] Retry also failed with 401');
+                  AppLogger.e('🌐 [API_CLIENT] Signing out...');
+                  clearTokenCache();
+                  await FirebaseService.auth.signOut();
+                  AppLogger.e('🌐 [API_CLIENT] Signed out, returning retry error');
+                } else {
+                  AppLogger.w('🌐 [API_CLIENT] Retry failed with different status code: ${retryError.response?.statusCode}');
+                }
+                AppLogger.e('🌐 [API_CLIENT] Returning DioException retry error');
+                return handler.next(retryError);
+              } else {
+                AppLogger.e('🌐 [API_CLIENT] Retry error is NOT DioException');
+                AppLogger.e('🌐 [API_CLIENT] Converting to DioException...');
+                // Convert non-DioException to DioException
+                final dioError = DioException(
+                  requestOptions: options,
+                  error: retryError,
+                  type: DioExceptionType.unknown,
+                );
+                AppLogger.e('🌐 [API_CLIENT] Converted to DioException');
+                AppLogger.e('🌐 [API_CLIENT] Returning converted DioException');
+                return handler.next(dioError);
+              }
+            }
+          } catch (refreshError) {
+            AppLogger.e('🌐 [API_CLIENT] ========================================');
+            AppLogger.e('🌐 [API_CLIENT] EXCEPTION in refresh token flow');
+            AppLogger.e('🌐 [API_CLIENT] Refresh error type: ${refreshError.runtimeType}');
+            AppLogger.e('🌐 [API_CLIENT] Refresh error: $refreshError');
+            AppLogger.e('🌐 [API_CLIENT] Stack trace: ${refreshError is Error ? refreshError.stackTrace : "N/A"}');
+            clearTokenCache();
+            await FirebaseService.auth.signOut();
+            AppLogger.e('🌐 [API_CLIENT] Signed out, returning original error');
+            return handler.next(error);
+          }
+        } else {
+          AppLogger.d('🌐 [API_CLIENT] Non-401 error, passing through');
         }
+        AppLogger.d('🌐 [API_CLIENT] ========================================');
         return handler.next(error);
       },
     ),

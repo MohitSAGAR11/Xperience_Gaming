@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/utils.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../providers/cafe_provider.dart';
 import '../../../widgets/loading_widget.dart';
 import '../../../widgets/custom_button.dart';
@@ -21,11 +22,22 @@ class MyCafesScreen extends ConsumerWidget {
       backgroundColor: AppColors.trueBlack,
       appBar: AppBar(
         backgroundColor: AppColors.trueBlack,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go(Routes.ownerDashboard),
+        ),
         title: const Text('My Cafes'),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => context.push(Routes.addCafe),
+            onPressed: () {
+              final user = ref.read(currentUserProvider);
+              if (user != null && user.isOwner && !user.isVerifiedOwner) {
+                context.push(Routes.verificationPending);
+              } else {
+                context.push(Routes.addCafe);
+              }
+            },
           ),
         ],
       ),
@@ -235,7 +247,14 @@ class MyCafesScreen extends ConsumerWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(Routes.addCafe),
+        onPressed: () {
+          final user = ref.read(currentUserProvider);
+          if (user != null && user.isOwner && !user.isVerifiedOwner) {
+            context.push(Routes.verificationPending);
+          } else {
+            context.push(Routes.addCafe);
+          }
+        },
         backgroundColor: AppColors.cyberCyan,
         icon: const Icon(Icons.add),
         label: const Text('Add Cafe'),

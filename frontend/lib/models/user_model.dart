@@ -5,6 +5,7 @@ class User {
   final String role;
   final String? phone;
   final String? avatar;
+  final bool? verified; // Only for owners, null for clients
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -15,6 +16,7 @@ class User {
     required this.role,
     this.phone,
     this.avatar,
+    this.verified,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -27,6 +29,7 @@ class User {
       role: json['role'] ?? 'client',
       phone: json['phone'],
       avatar: json['avatar'],
+      verified: json['verified'], // null for clients, boolean for owners
       createdAt: _parseTimestamp(json['createdAt']) ?? DateTime.now(),
       updatedAt: _parseTimestamp(json['updatedAt']) ?? DateTime.now(),
     );
@@ -57,6 +60,7 @@ class User {
       'role': role,
       'phone': phone,
       'avatar': avatar,
+      'verified': verified,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -65,6 +69,8 @@ class User {
   bool get isOwner => role == 'owner';
 
   bool get isClient => role == 'client';
+
+  bool get isVerifiedOwner => isOwner && (verified == true);
 
   String get initials {
     final parts = name.split(' ');
@@ -81,6 +87,7 @@ class User {
     String? role,
     String? phone,
     String? avatar,
+    bool? verified,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -91,6 +98,7 @@ class User {
       role: role ?? this.role,
       phone: phone ?? this.phone,
       avatar: avatar ?? this.avatar,
+      verified: verified ?? this.verified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

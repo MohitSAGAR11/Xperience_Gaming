@@ -1,10 +1,21 @@
-const crypto = require('crypto');
 const axios = require('axios');
 const { db } = require('../config/firebase');
 
-const PAYU_MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
-const PAYU_MERCHANT_SALT = process.env.PAYU_MERCHANT_SALT;
-const PAYU_BASE_URL = process.env.PAYU_BASE_URL || 'https://test.payu.in';
+// Cashfree Configuration
+const CASHFREE_CLIENT_ID = process.env.CASHFREE_CLIENT_ID;
+const CASHFREE_CLIENT_SECRET = process.env.CASHFREE_CLIENT_SECRET;
+const CASHFREE_API_VERSION = process.env.CASHFREE_API_VERSION || '2023-08-01';
+const CASHFREE_BASE_URL = process.env.CASHFREE_BASE_URL || 'https://api.cashfree.com';
+
+// Cashfree Auth Headers
+function getCashfreeAuthHeaders() {
+  return {
+    'x-client-id': CASHFREE_CLIENT_ID,
+    'x-client-secret': CASHFREE_CLIENT_SECRET,
+    'x-api-version': CASHFREE_API_VERSION,
+    'Content-Type': 'application/json',
+  };
+}
 
 // Logging helper
 const logRefund = (message, data = null) => {
@@ -24,17 +35,6 @@ const logRefundError = (message, error = null) => {
   }
 };
 
-// Generate PayU refund hash
-function generateRefundHash(paymentId, amount) {
-  const hashString = `${PAYU_MERCHANT_KEY}|${paymentId}|${amount}|${PAYU_MERCHANT_SALT}`;
-  const hash = crypto.createHash('sha512').update(hashString).digest('hex');
-  logRefund('Refund hash generated', {
-    hashString: hashString.replace(PAYU_MERCHANT_SALT, '[SALT_HIDDEN]'),
-    hashLength: hash.length,
-    hashPrefix: hash.substring(0, 20) + '...'
-  });
-  return hash;
-}
 
 /**
  * Calculate refund amount based on cancellation policy
@@ -143,60 +143,97 @@ const initiateRefund = async (req, res) => {
       });
     }
     
-    // Generate refund hash
-    logRefund('Generating refund hash', {
-      paymentId: booking.paymentId,
-      refundAmount
-    });
-    const refundHash = generateRefundHash(booking.paymentId, refundAmount);
-    
-    // Initiate refund via PayU API
-    const refundData = {
-      key: PAYU_MERCHANT_KEY,
-      command: 'cancel_refund_transaction',
-      var1: booking.paymentId, // Payment ID
-      var2: refundAmount.toString(), // Refund amount
-      hash: refundHash
+    // Validate Cashfree Configuration
+    if (!CASHFREE_CLIENT_ID || !CASHFREE_CLIENT_SECRET) {
+      logRefundError('Missing Cashfree credentials', { bookingId });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Server configuration error - Missing Cashfree credentials' 
+      });
+    }
+
+    // Get order_id from booking (stored as paymentTransactionId)
+    const orderId = booking.paymentTransactionId;
+    if (!orderId) {
+      logRefundError('Order ID not found in booking', { bookingId });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Order ID not found' 
+      });
+    }
+
+    // Create Cashfree refund payload
+    const refundPayload = {
+      refund_amount: parseFloat(refundAmount.toFixed(2)),
+      refund_id: `REF_${bookingId}_${Date.now()}`,
+      refund_note: reason || 'Booking cancelled',
+      refund_splits: []
     };
-    
-    logRefund('Calling PayU refund API', {
-      url: `${PAYU_BASE_URL}/merchant/postservice?form=2`,
+
+    logRefund('Calling Cashfree refund API', {
+      url: `${CASHFREE_BASE_URL}/pg/orders/${orderId}/refund`,
+      orderId,
       paymentId: booking.paymentId,
-      refundAmount: refundAmount.toString()
+      refundAmount: refundPayload.refund_amount,
+      refundId: refundPayload.refund_id
     });
     
-    // Call PayU refund API
-    const refundResponse = await axios.post(
-      `${PAYU_BASE_URL}/merchant/postservice?form=2`,
-      new URLSearchParams(refundData).toString(),
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+    // Call Cashfree Refund API
+    let refundResponse;
+    try {
+      refundResponse = await axios.post(
+        `${CASHFREE_BASE_URL}/pg/orders/${orderId}/refund`,
+        refundPayload,
+        {
+          headers: getCashfreeAuthHeaders(),
         }
-      }
-    );
+      );
+      
+      logRefund('Cashfree refund API response received', {
+        status: refundResponse.status,
+        data: refundResponse.data
+      });
+    } catch (apiError) {
+      logRefundError('Cashfree refund API call failed', {
+        bookingId,
+        orderId,
+        error: apiError.message,
+        response: apiError.response?.data,
+        status: apiError.response?.status
+      });
+      
+      const errorMessage = apiError.response?.data?.message || 
+                          apiError.response?.data?.error?.message ||
+                          'Failed to process refund with Cashfree';
+      
+      await db.collection('bookings').doc(bookingId).update({
+        refundStatus: 'failed',
+        updatedAt: new Date()
+      });
+      
+      return res.status(apiError.response?.status || 500).json({
+        success: false,
+        message: errorMessage,
+        data: apiError.response?.data
+      });
+    }
     
-    logRefund('PayU refund API response received', {
-      status: refundResponse.status,
-      statusText: refundResponse.statusText,
-      data: refundResponse.data
-    });
-    
-    // Parse PayU response
     const refundResult = refundResponse.data;
     
-    if (refundResult.status === 'success' || refundResult.status === 1 || refundResult.status === 'SUCCESS') {
-      logRefund('Refund successful - updating booking', {
-        refundId: refundResult.refundId,
+    // Check if refund was successful
+    if (refundResult.refund_status === 'SUCCESS' || refundResult.refund_status === 'PENDING') {
+      logRefund('Refund initiated successfully - updating booking', {
+        refundId: refundResult.refund_id,
+        refundStatus: refundResult.refund_status,
         refundAmount
       });
 
       // Update booking
       await db.collection('bookings').doc(bookingId).update({
-        refundId: refundResult.refundId || `REF_${Date.now()}`,
+        refundId: refundResult.refund_id || refundPayload.refund_id,
         refundAmount: refundAmount,
-        refundStatus: 'processed',
-        paymentStatus: 'refunded',
+        refundStatus: refundResult.refund_status === 'SUCCESS' ? 'processed' : 'pending',
+        paymentStatus: refundResult.refund_status === 'SUCCESS' ? 'refunded' : booking.paymentStatus,
         refundReason: reason || 'Booking cancelled',
         refundedAt: new Date(),
         updatedAt: new Date()
@@ -204,25 +241,26 @@ const initiateRefund = async (req, res) => {
       
       logRefund('=== REFUND PROCESSED SUCCESSFULLY ===', {
         bookingId,
-        refundId: refundResult.refundId,
-        refundAmount
+        refundId: refundResult.refund_id,
+        refundAmount,
+        refundStatus: refundResult.refund_status
       });
       
       res.json({
         success: true,
         message: 'Refund initiated successfully',
         data: {
-          refundId: refundResult.refundId,
+          refundId: refundResult.refund_id || refundPayload.refund_id,
           refundAmount: refundAmount,
-          refundStatus: 'processed'
+          refundStatus: refundResult.refund_status === 'SUCCESS' ? 'processed' : 'pending'
         }
       });
     } else {
-      logRefundError('Refund failed from PayU', {
+      logRefundError('Refund failed from Cashfree', {
         bookingId,
         refundResult,
-        status: refundResult.status,
-        message: refundResult.message
+        refundStatus: refundResult.refund_status,
+        message: refundResult.message || refundResult.error_message
       });
 
       // Refund failed
@@ -233,7 +271,7 @@ const initiateRefund = async (req, res) => {
       
       res.status(400).json({
         success: false,
-        message: refundResult.message || 'Refund failed',
+        message: refundResult.message || refundResult.error_message || 'Refund failed',
         data: refundResult
       });
     }

@@ -25,10 +25,11 @@ const jwtExpiresIn = defineString('JWT_EXPIRES_IN', { default: '7d' });
 const firebaseStorageBucket = defineString('APP_STORAGE_BUCKET', { 
   default: 'xperience-gaming.firebasestorage.app' 
 });
-const payuMerchantKey = defineString('PAYU_MERCHANT_KEY');
-const payuMerchantSalt = defineSecret('PAYU_MERCHANT_SALT');
-const payuMode = defineString('PAYU_MODE', { default: 'test' });
-const payuBaseUrl = defineString('PAYU_BASE_URL');
+// Cashfree Configuration
+const cashfreeClientId = defineString('CASHFREE_CLIENT_ID');
+const cashfreeClientSecret = defineSecret('CASHFREE_CLIENT_SECRET');
+const cashfreeApiVersion = defineString('CASHFREE_API_VERSION', { default: '2023-08-01' });
+const cashfreeBaseUrl = defineString('CASHFREE_BASE_URL', { default: 'https://sandbox.cashfree.com' });
 const backendUrl = defineString('BACKEND_URL', {
   default: 'https://asia-south1-xperience-gaming.cloudfunctions.net/api'
 });
@@ -99,7 +100,13 @@ app.use((req, res, next) => {
   }
   
   // CRITICAL: For upload routes, use raw parser to preserve body buffer for busboy
+  // BUT: DELETE requests on upload routes need JSON parsing (for image deletion)
   if (isUploadRoute) {
+    // DELETE requests should use JSON parser, not raw parser
+    if (req.method === 'DELETE') {
+      return jsonParser(req, res, next);
+    }
+    
     console.log('📸 [BODY_PARSER] Using raw parser for upload route to preserve body buffer');
     // Use raw parser to get body as buffer, then store it for busboy
     return rawParser(req, res, () => {
@@ -165,23 +172,24 @@ app.use((req, res, next) => {
   process.env.JWT_SECRET = jwtSecret.value();
   process.env.JWT_EXPIRES_IN = jwtExpiresIn.value();
   process.env.APP_STORAGE_BUCKET = firebaseStorageBucket.value();
-  process.env.PAYU_MERCHANT_KEY = payuMerchantKey.value();
-  process.env.PAYU_MERCHANT_SALT = payuMerchantSalt.value();
-  process.env.PAYU_MODE = payuMode.value();
-  process.env.PAYU_BASE_URL = payuBaseUrl.value();
+  // Cashfree Environment Variables
+  process.env.CASHFREE_CLIENT_ID = cashfreeClientId.value();
+  process.env.CASHFREE_CLIENT_SECRET = cashfreeClientSecret.value();
+  process.env.CASHFREE_API_VERSION = cashfreeApiVersion.value();
+  process.env.CASHFREE_BASE_URL = cashfreeBaseUrl.value();
   process.env.BACKEND_URL = backendUrl.value();
   
-  // Log PayU configuration on first request (for debugging)
-  if (!global.payuConfigLogged) {
-    console.log('💳 [PAYU_CONFIG] ========================================');
-    console.log('💳 [PAYU_CONFIG] PayU Configuration Status:');
-    console.log('💳 [PAYU_CONFIG] PAYU_MERCHANT_KEY:', payuMerchantKey.value() ? `${payuMerchantKey.value().substring(0, 4)}...` : '❌ MISSING');
-    console.log('💳 [PAYU_CONFIG] PAYU_MERCHANT_SALT:', payuMerchantSalt.value() ? '✅ SET' : '❌ MISSING');
-    console.log('💳 [PAYU_CONFIG] PAYU_BASE_URL:', payuBaseUrl.value() || '❌ MISSING');
-    console.log('💳 [PAYU_CONFIG] PAYU_MODE:', payuMode.value() || 'test (default)');
-    console.log('💳 [PAYU_CONFIG] Environment:', payuBaseUrl.value()?.includes('secure.payu.in') ? '🟢 PRODUCTION' : payuBaseUrl.value()?.includes('test.payu.in') ? '🟡 TEST' : '❓ UNKNOWN');
-    console.log('💳 [PAYU_CONFIG] ========================================');
-    global.payuConfigLogged = true;
+  // Log Payment Gateway configuration on first request (for debugging)
+  if (!global.paymentConfigLogged) {
+    console.log('💳 [PAYMENT_CONFIG] ========================================');
+    console.log('💳 [PAYMENT_CONFIG] Cashfree Configuration Status:');
+    console.log('💳 [PAYMENT_CONFIG] CASHFREE_CLIENT_ID:', cashfreeClientId.value() ? `${cashfreeClientId.value().substring(0, 4)}...` : '❌ MISSING');
+    console.log('💳 [PAYMENT_CONFIG] CASHFREE_CLIENT_SECRET:', cashfreeClientSecret.value() ? '✅ SET' : '❌ MISSING');
+    console.log('💳 [PAYMENT_CONFIG] CASHFREE_BASE_URL:', cashfreeBaseUrl.value() || '❌ MISSING');
+    console.log('💳 [PAYMENT_CONFIG] CASHFREE_API_VERSION:', cashfreeApiVersion.value() || '2023-08-01 (default)');
+    console.log('💳 [PAYMENT_CONFIG] Environment:', cashfreeBaseUrl.value()?.includes('sandbox') ? '🟡 SANDBOX' : cashfreeBaseUrl.value()?.includes('api.cashfree.com') ? '🟢 PRODUCTION' : '❓ UNKNOWN');
+    console.log('💳 [PAYMENT_CONFIG] ========================================');
+    global.paymentConfigLogged = true;
   }
   
   next();
@@ -234,7 +242,7 @@ app.use((err, req, res, next) => {
 // Export the Express app as a Firebase Function (Gen 2)
 exports.api = onRequest(
   {
-    secrets: [jwtSecret, payuMerchantSalt]
+    secrets: [jwtSecret, cashfreeClientSecret]
   },
   app
 );

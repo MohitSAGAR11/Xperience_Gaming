@@ -103,8 +103,6 @@ class ImageUploadService {
   /// Delete cafe image
   Future<bool> deleteCafeImage(String cafeId, String imageUrl) async {
     try {
-      AppLogger.d('📸 Deleting image: $imageUrl');
-
       // Get auth token from Firebase
       final token = await FirebaseService.getIdToken();
       if (token == null) {
@@ -122,11 +120,9 @@ class ImageUploadService {
         body: json.encode({'imageUrl': imageUrl}),
       );
 
-      AppLogger.d('📸 Delete response status: ${response.statusCode}');
-
       return response.statusCode == 200;
     } catch (e) {
-      AppLogger.d('📸 Delete error: $e');
+      AppLogger.e('Delete image error: $e');
       return false;
     }
   }
