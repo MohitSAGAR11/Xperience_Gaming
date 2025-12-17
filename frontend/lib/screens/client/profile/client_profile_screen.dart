@@ -65,35 +65,14 @@ class ClientProfileScreen extends ConsumerWidget {
               onTap: () => context.push(Routes.editClientProfile),
             ),
             _ProfileMenuItem(
-              icon: Icons.lock_outline,
-              title: 'Change Password',
-              onTap: () {
-                // TODO: Navigate to change password
-              },
-            ),
-            _ProfileMenuItem(
               icon: Icons.history,
               title: 'Booking History',
               onTap: () => context.go(Routes.myBookings),
             ),
             _ProfileMenuItem(
-              icon: Icons.notifications_outlined,
-              title: 'Notifications',
-              onTap: () {
-                // TODO: Navigate to notifications
-              },
-            ),
-            _ProfileMenuItem(
               icon: Icons.help_outline,
               title: 'Help & Support',
               onTap: () => context.push(Routes.helpSupport),
-            ),
-            _ProfileMenuItem(
-              icon: Icons.info_outline,
-              title: 'About',
-              onTap: () {
-                // TODO: Show about dialog
-              },
             ),
             const SizedBox(height: 32),
 

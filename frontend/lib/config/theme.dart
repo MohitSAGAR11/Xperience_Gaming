@@ -10,8 +10,8 @@ class AppColors {
   static const Color cardDark = Color(0xFF1E1E1E);
   
   // Brand Colors
-  static const Color neonPurple = Color(0xFFBC13FE);
-  static const Color cyberCyan = Color(0xFF00E5FF);
+  static const Color neonPurple = Color(0xFFEC4899); // rgb(236, 72, 153)
+  static const Color cyberCyan = Color(0x803B82F6); // rgba(59, 130, 246, 0.5) - 0x80 = 50% alpha
   
   // Text Colors
   static const Color textPrimary = Color(0xFFFFFFFF);
@@ -22,7 +22,7 @@ class AppColors {
   static const Color success = Color(0xFF39FF14);  // Matrix Green
   static const Color error = Color(0xFFFF003C);    // Cyber Red
   static const Color warning = Color(0xFFFFE600);  // Electric Yellow
-  static const Color info = Color(0xFF00E5FF);     // Cyber Cyan
+  static const Color info = Color(0x803B82F6); // rgba(59, 130, 246, 0.5) - 0x80 = 50% alpha
   
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(

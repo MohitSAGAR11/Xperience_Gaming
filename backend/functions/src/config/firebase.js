@@ -7,7 +7,7 @@ try {
   
   // Get storage bucket from environment variable or use default
   // Default bucket name matches frontend configuration
-  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 
+  const storageBucket = process.env.APP_STORAGE_BUCKET || 
                        'xperience-gaming.firebasestorage.app';
   
   admin.initializeApp({

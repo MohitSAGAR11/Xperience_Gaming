@@ -54,8 +54,8 @@ dependencies:
   flutter_local_notifications: ^17.0.0
   logger: ^2.0.2
   
-  # Payment - PayU Integration
-  webview_flutter: ^4.4.2
+  # Payment - WebView for PayU Integration
+  webview_flutter: ^4.5.0  # WebView for payment gateway
 
   cupertino_icons: ^1.0.6
 

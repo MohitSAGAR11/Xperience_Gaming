@@ -268,6 +268,12 @@ class PaymentData {
 
   /// Build PayU payment form HTML
   String buildPaymentFormHtml() {
+    AppLogger.d('💳 [PAYMENT_FORM] ========================================');
+    AppLogger.d('💳 [PAYMENT_FORM] === BUILDING PAYMENT FORM HTML ===');
+    AppLogger.d('💳 [PAYMENT_FORM] Transaction ID: $txnid');
+    AppLogger.d('💳 [PAYMENT_FORM] Amount: $amount');
+    AppLogger.d('💳 [PAYMENT_FORM] Payment URL: $paymentUrl');
+    
     // HTML encode values to prevent XSS and ensure proper form submission
     String htmlEncode(String value) {
       return value
@@ -278,6 +284,7 @@ class PaymentData {
           .replaceAll("'", '&#x27;');
     }
     
+    AppLogger.d('💳 [PAYMENT_FORM] Creating form fields...');
     final formFields = [
       '<input type="hidden" name="key" value="${htmlEncode(key)}">',
       '<input type="hidden" name="txnid" value="${htmlEncode(txnid)}">',
@@ -300,11 +307,15 @@ class PaymentData {
       '<input type="hidden" name="service_provider" value="payu_paisa">',
     ].join('\n');
     
-    AppLogger.d('💳 [PAYMENT_FORM] Building PayU form HTML');
+    AppLogger.d('💳 [PAYMENT_FORM] Form fields created');
     AppLogger.d('💳 [PAYMENT_FORM] Form fields count: ${formFields.split('\n').length}');
-    AppLogger.d('💳 [PAYMENT_FORM] Payment URL: $paymentUrl');
+    AppLogger.d('💳 [PAYMENT_FORM] Success URL: $surl');
+    AppLogger.d('💳 [PAYMENT_FORM] Failure URL: $furl');
+    AppLogger.d('💳 [PAYMENT_FORM] Cancel URL: $curl');
+    AppLogger.d('💳 [PAYMENT_FORM] Hash length: ${hash.length}');
 
-    return '''
+    AppLogger.d('💳 [PAYMENT_FORM] Generating HTML document...');
+    final htmlContent = '''
       <!DOCTYPE html>
       <html>
       <head>
@@ -349,30 +360,46 @@ class PaymentData {
           $formFields
         </form>
         <script>
-          console.log('PayU Form Submission Starting...');
-          console.log('Form Action:', document.getElementById('payuForm').action);
-          console.log('Form Method:', document.getElementById('payuForm').method);
-          console.log('Form Fields Count:', document.getElementById('payuForm').elements.length);
+          console.log('💳 [WEBVIEW] ========================================');
+          console.log('💳 [WEBVIEW] PayU Form Submission Starting...');
+          console.log('💳 [WEBVIEW] Form Action:', document.getElementById('payuForm').action);
+          console.log('💳 [WEBVIEW] Form Method:', document.getElementById('payuForm').method);
+          console.log('💳 [WEBVIEW] Form Fields Count:', document.getElementById('payuForm').elements.length);
           
           // Log all form values for debugging
           const form = document.getElementById('payuForm');
           const formData = new FormData(form);
-          console.log('Form Data:');
+          console.log('💳 [WEBVIEW] Form Data:');
           for (let [key, value] of formData.entries()) {
-            console.log(key + ':', value);
+            // Mask sensitive data
+            if (key === 'hash') {
+              console.log(key + ':', value.substring(0, 20) + '...' + value.substring(value.length - 10));
+            } else {
+              console.log(key + ':', value);
+            }
           }
           
           // Submit form
           try {
+            console.log('💳 [WEBVIEW] Submitting form to PayU...');
             document.getElementById('payuForm').submit();
-            console.log('Form submitted successfully');
+            console.log('💳 [WEBVIEW] ✅ Form submitted successfully');
+            console.log('💳 [WEBVIEW] ========================================');
           } catch (error) {
-            console.error('Form submission error:', error);
+            console.error('💳 [WEBVIEW] ❌ Form submission error:', error);
+            console.error('💳 [WEBVIEW] ========================================');
           }
         </script>
       </body>
       </html>
     ''';
+    
+    AppLogger.d('💳 [PAYMENT_FORM] HTML document generated');
+    AppLogger.d('💳 [PAYMENT_FORM] Total HTML length: ${htmlContent.length} characters');
+    AppLogger.d('💳 [PAYMENT_FORM] ✅ PAYMENT FORM HTML READY');
+    AppLogger.d('💳 [PAYMENT_FORM] ========================================');
+    
+    return htmlContent;
   }
 }
 

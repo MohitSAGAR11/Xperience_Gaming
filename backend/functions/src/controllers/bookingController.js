@@ -10,9 +10,26 @@ const notificationService = require('../services/notificationService');
  * @returns {number} Minutes since midnight
  */
 const timeToMinutes = (time) => {
-  if (!time) return 0;
+  if (!time) {
+    console.log('🕐 [TIME] timeToMinutes: null/undefined time');
+    return 0;
+  }
+  
   const parts = time.split(':').map(Number);
-  return parts[0] * 60 + (parts[1] || 0);
+  const hour = parts[0];
+  const minute = parts[1] || 0;
+  const minutes = hour * 60 + minute;
+  
+  // Debug logging for 12:00 specifically
+  if (hour === 12) {
+    console.log(`🕐 [TIME] timeToMinutes: ${time} → hour=${hour}, minute=${minute}, total=${minutes} minutes (12:00 = ${hour === 12 ? 'NOON (12:00 PM)' : 'MIDNIGHT (12:00 AM)'})`);
+  } else if (hour === 0) {
+    console.log(`🕐 [TIME] timeToMinutes: ${time} → hour=${hour}, minute=${minute}, total=${minutes} minutes (00:00 = MIDNIGHT (12:00 AM))`);
+  } else {
+    console.log(`🕐 [TIME] timeToMinutes: ${time} → hour=${hour}, minute=${minute}, total=${minutes} minutes (${hour < 12 ? hour + ':00 AM' : (hour === 12 ? '12:00 PM' : (hour - 12) + ':00 PM')})`);
+  }
+  
+  return minutes;
 };
 
 /**
@@ -138,8 +155,6 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
   // If end time is before start time, booking crosses midnight
   if (reqEndMins < reqStartMins) {
     reqEndMins += 24 * 60; // Add 24 hours
-    console.log('🎯 [GET_AVAILABLE] Requested booking crosses midnight:', startTime, 'to', endTime);
-    console.log('🎯 [GET_AVAILABLE] Adjusted end mins:', reqEndMins);
   }
   
   let query = db.collection('bookings')
@@ -161,8 +176,6 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
     .map(doc => ({ id: doc.id, ...doc.data() }))
     .filter(b => ['pending', 'confirmed'].includes(b.status));
 
-  console.log('🎯 [GET_AVAILABLE] Checking', maxStations, 'stations against', existingBookings.length, 'bookings');
-
   const availableStations = [];
 
   for (let station = 1; station <= maxStations; station++) {
@@ -181,7 +194,6 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
       // Check for overlap with adjusted times
       // Overlap exists if: reqStart < bookedEnd AND reqEnd > bookedStart
       if (reqStartMins < bookedEndMins && reqEndMins > bookedStartMins) {
-        console.log(`🎯 [GET_AVAILABLE] Station ${station} CONFLICT: Req(${reqStartMins}-${reqEndMins}) vs Booked(${bookedStartMins}-${bookedEndMins})`);
         hasConflict = true;
         break;
       }
@@ -192,7 +204,6 @@ const getAvailableStations = async (cafeId, stationType, consoleType, bookingDat
     }
   }
 
-  console.log('🎯 [GET_AVAILABLE] Available stations found:', availableStations.length);
   return availableStations;
 };
 
@@ -220,9 +231,19 @@ const getUserData = async (userId) => {
  * @access  Private/Client
  */
 const createBooking = async (req, res) => {
+  const requestId = `BOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   try {
+    console.log('🎫 [BOOKING] ========================================');
+    console.log('🎫 [BOOKING] === CREATE BOOKING REQUEST ===');
+    console.log('🎫 [BOOKING] Request ID:', requestId);
+    console.log('🎫 [BOOKING] Request Method:', req.method);
+    console.log('🎫 [BOOKING] Request URL:', req.originalUrl || req.url);
+    console.log('🎫 [BOOKING] User ID:', req.user?.id);
+    console.log('🎫 [BOOKING] Request Body:', JSON.stringify(req.body, null, 2));
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('🎫 [BOOKING] Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         errors: errors.array()
@@ -240,16 +261,30 @@ const createBooking = async (req, res) => {
       notes 
     } = req.body;
 
+    console.log('🎫 [BOOKING] Extracted booking data:', {
+      cafeId,
+      stationType,
+      consoleType,
+      stationNumber,
+      bookingDate,
+      startTime,
+      endTime,
+      notes: notes || 'none'
+    });
+
     // Validate console type
     const validConsoleTypes = ['ps5', 'ps4', 'xbox_series_x', 'xbox_series_s', 'xbox_one', 'nintendo_switch'];
     if (stationType === 'console') {
+      console.log('🎫 [BOOKING] Validating console type:', consoleType);
       if (!consoleType) {
+        console.log('🎫 [BOOKING] ERROR: Console type is required');
         return res.status(400).json({
           success: false,
           message: 'Console type is required for console bookings'
         });
       }
       if (!validConsoleTypes.includes(consoleType)) {
+        console.log('🎫 [BOOKING] ERROR: Invalid console type:', consoleType);
         return res.status(400).json({
           success: false,
           message: `Invalid console type. Valid types: ${validConsoleTypes.join(', ')}`
@@ -258,15 +293,26 @@ const createBooking = async (req, res) => {
     }
 
     // Get cafe details
+    console.log('🎫 [BOOKING] Fetching cafe data for cafeId:', cafeId);
     const cafe = await getCafeData(cafeId);
     if (!cafe) {
+      console.log('🎫 [BOOKING] ERROR: Cafe not found:', cafeId);
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
 
+    console.log('🎫 [BOOKING] Cafe found:', {
+      cafeId: cafe.id,
+      cafeName: cafe.name,
+      isActive: cafe.isActive,
+      openingTime: cafe.openingTime,
+      closingTime: cafe.closingTime
+    });
+
     if (!cafe.isActive) {
+      console.log('🎫 [BOOKING] ERROR: Cafe is not active');
       return res.status(400).json({
         success: false,
         message: 'This cafe is currently not accepting bookings'
@@ -275,9 +321,11 @@ const createBooking = async (req, res) => {
 
     // Get max available stations/units
     const maxStations = getMaxStations(cafe, stationType, consoleType);
+    console.log('🎫 [BOOKING] Max stations available:', maxStations);
     
     if (maxStations === 0) {
       const typeLabel = stationType === 'pc' ? 'PC stations' : `${consoleType} consoles`;
+      console.log('🎫 [BOOKING] ERROR: No stations available');
       return res.status(400).json({
         success: false,
         message: `This cafe does not have any ${typeLabel} available`
@@ -285,8 +333,10 @@ const createBooking = async (req, res) => {
     }
 
     // Validate station/unit number
+    console.log('🎫 [BOOKING] Validating station number:', stationNumber, 'against max:', maxStations);
     if (stationNumber < 1 || stationNumber > maxStations) {
       const typeLabel = stationType === 'pc' ? 'PC stations' : `${consoleType} units`;
+      console.log('🎫 [BOOKING] ERROR: Invalid station number');
       return res.status(400).json({
         success: false,
         message: `Invalid ${typeLabel} number. Available: 1-${maxStations}`
@@ -299,28 +349,21 @@ const createBooking = async (req, res) => {
     const cafeOpenMins = timeToMinutes(cafe.openingTime);
     let cafeCloseMins = timeToMinutes(cafe.closingTime);
     
-    console.log('⏰ [CREATE_BOOKING] Time validation:');
-    console.log(`⏰   Booking: ${startTime} (${bookingStartMins}m) → ${endTime} (${bookingEndMins}m)`);
-    console.log(`⏰   Cafe: ${cafe.openingTime} (${cafeOpenMins}m) → ${cafe.closingTime} (${cafeCloseMins}m)`);
-    
     // Detect if cafe crosses midnight (e.g., 09:00 to 01:00)
     const crossesMidnight = cafeCloseMins < cafeOpenMins;
     
     if (crossesMidnight) {
       // Adjust closing time to next day
       cafeCloseMins += 24 * 60;
-      console.log(`⏰   Cafe crosses midnight, adjusted close: ${cafeCloseMins}m`);
       
       // Adjust booking end if it crosses midnight too
       if (bookingEndMins < bookingStartMins) {
         bookingEndMins += 24 * 60;
-        console.log(`⏰   Booking crosses midnight, adjusted end: ${bookingEndMins}m`);
       }
       
       // Adjust booking start if it's after midnight (e.g., 00:30)
       if (bookingStartMins < cafeOpenMins) {
         const adjustedStartMins = bookingStartMins + 24 * 60;
-        console.log(`⏰   Booking starts after midnight, adjusted start: ${adjustedStartMins}m`);
         
         // Check if adjusted start is within cafe hours
         if (adjustedStartMins < cafeOpenMins || adjustedStartMins >= cafeCloseMins) {
@@ -344,9 +387,6 @@ const createBooking = async (req, res) => {
             message: `Booking time must be within cafe hours: ${formatTime(cafe.openingTime)} - ${formatTime(cafe.closingTime)}`
           });
         }
-        
-        console.log('⏰   Validation passed for after-midnight booking!');
-        // Continue with booking creation
       } else {
         // Normal validation for before-midnight start times
         if (bookingStartMins < cafeOpenMins || bookingEndMins > cafeCloseMins) {
@@ -374,28 +414,48 @@ const createBooking = async (req, res) => {
         });
       }
     }
-    
-    console.log('⏰   Time validation PASSED!');
 
 
     // Calculate duration and total amount
     const durationHours = calculateDuration(startTime, endTime);
+    console.log('🎫 [BOOKING] Calculated duration:', durationHours, 'hours');
+    
+    // Validate minimum booking duration (1 hour)
+    if (durationHours < 1) {
+      console.log('🎫 [BOOKING] ERROR: Duration less than 1 hour');
+      return res.status(400).json({
+        success: false,
+        message: 'Minimum booking duration is 1 hour'
+      });
+    }
+    
     const hourlyRate = getHourlyRate(cafe, stationType, consoleType);
-    const totalAmount = durationHours * hourlyRate;
+    console.log('🎫 [BOOKING] Hourly rate:', hourlyRate);
+    // Calculate exact amount with decimal precision (no rounding)
+    // Example: 1.5 hours * 100/hr = 150.00 (not rounded to 200)
+    const totalAmount = parseFloat((durationHours * hourlyRate).toFixed(2));
+    console.log('🎫 [BOOKING] Total amount calculated:', totalAmount);
 
     // Use Firestore transaction to prevent race conditions
     const bookingRef = db.collection('bookings').doc();
+    console.log('🎫 [BOOKING] Starting Firestore transaction for booking creation');
     
     try {
       await db.runTransaction(async (transaction) => {
+        console.log('🎫 [BOOKING] Inside transaction - checking availability...');
         // Re-check for conflicts inside transaction using transaction.get() for atomic reads
         // This ensures we read a consistent snapshot and prevents double-booking
         const availableStations = await getAvailableStations(
           cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations, transaction
         );
 
+        console.log('🎫 [BOOKING] Available stations in transaction:', availableStations);
+        console.log('🎫 [BOOKING] Requested station number:', stationNumber);
+        console.log('🎫 [BOOKING] Station available?', availableStations.includes(stationNumber));
+
         if (!availableStations.includes(stationNumber)) {
           const typeLabel = stationType === 'pc' ? 'PC station' : `${consoleType} console`;
+          console.log('🎫 [BOOKING] CONFLICT: Station not available');
           throw new Error(`CONFLICT:This ${typeLabel} #${stationNumber} is already booked for the selected time slot. Available: ${availableStations.length > 0 ? '#' + availableStations.join(', #') : 'None'}`);
         }
 
@@ -419,13 +479,33 @@ const createBooking = async (req, res) => {
           updatedAt: new Date()
         };
 
+        console.log('🎫 [BOOKING] Creating booking data:', {
+          bookingId: bookingRef.id,
+          userId: bookingData.userId,
+          cafeId: bookingData.cafeId,
+          stationType: bookingData.stationType,
+          stationNumber: bookingData.stationNumber,
+          bookingDate: bookingData.bookingDate,
+          startTime: bookingData.startTime,
+          endTime: bookingData.endTime,
+          durationHours: bookingData.durationHours,
+          totalAmount: bookingData.totalAmount,
+          status: bookingData.status,
+          paymentStatus: bookingData.paymentStatus
+        });
+
         transaction.set(bookingRef, bookingData);
+        console.log('🎫 [BOOKING] Booking data set in transaction');
       });
 
+      console.log('🎫 [BOOKING] Transaction completed successfully');
+      
       // Fetch booking with details
+      console.log('🎫 [BOOKING] Fetching created booking:', bookingRef.id);
       const bookingDoc = await bookingRef.get();
       const bookingData = bookingDoc.data();
       
+      console.log('🎫 [BOOKING] Fetching cafe and user data...');
       const cafeData = await getCafeData(cafeId);
       const userData = await getUserData(req.user.id);
 
@@ -448,26 +528,35 @@ const createBooking = async (req, res) => {
       };
 
       // Create community post (show booking activity in community feed)
+      console.log('🎫 [BOOKING] Creating community post...');
       try {
         await createCommunityPost(booking, cafeData, userData);
-        console.log('🌐 Community post created for booking');
+        console.log('🎫 [BOOKING] Community post created successfully');
       } catch (communityError) {
         // Don't fail booking if community post fails
-        console.error('🌐 Failed to create community post:', communityError);
+        console.error('🎫 [BOOKING] Failed to create community post:', communityError);
       }
 
       // Send notification to cafe owner
+      console.log('🎫 [BOOKING] Sending notification to cafe owner...');
       try {
         await notificationService.sendBookingNotification(
           booking,
           cafeData,
           userData
         );
-        console.log('📬 Notification sent to cafe owner');
+        console.log('🎫 [BOOKING] Notification sent successfully');
       } catch (notificationError) {
         // Don't fail booking if notification fails
-        console.error('📬 Failed to send notification:', notificationError);
+        console.error('🎫 [BOOKING] Failed to send notification:', notificationError);
       }
+
+      console.log('🎫 [BOOKING] ✅ BOOKING CREATED SUCCESSFULLY');
+      console.log('🎫 [BOOKING] Booking ID:', booking.id);
+      console.log('🎫 [BOOKING] Total Amount:', totalAmount);
+      console.log('🎫 [BOOKING] Status:', booking.status);
+      console.log('🎫 [BOOKING] Payment Status:', booking.paymentStatus);
+      console.log('🎫 [BOOKING] ========================================');
 
       res.status(201).json({
         success: true,
@@ -485,6 +574,7 @@ const createBooking = async (req, res) => {
       });
     } catch (error) {
       if (error.message && error.message.startsWith('CONFLICT:')) {
+        console.log('🎫 [BOOKING] ❌ CONFLICT ERROR:', error.message);
         return res.status(409).json({
           success: false,
           message: error.message.replace('CONFLICT:', '')
@@ -493,7 +583,9 @@ const createBooking = async (req, res) => {
       throw error;
     }
   } catch (error) {
-    console.error('Create booking error:', error);
+    console.error('🎫 [BOOKING] ❌ CREATE BOOKING ERROR:', error);
+    console.error('🎫 [BOOKING] Error stack:', error.stack);
+    console.error('🎫 [BOOKING] Request ID:', requestId);
     res.status(500).json({
       success: false,
       message: 'Server error while creating booking',
@@ -508,40 +600,73 @@ const createBooking = async (req, res) => {
  * @access  Private
  */
 const getAvailableStationsAPI = async (req, res) => {
+  const requestId = `AVAIL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   try {
+    console.log('🎫 [AVAILABILITY] ========================================');
+    console.log('🎫 [AVAILABILITY] === GET AVAILABLE STATIONS REQUEST ===');
+    console.log('🎫 [AVAILABILITY] Request ID:', requestId);
+    console.log('🎫 [AVAILABILITY] Query params:', req.query);
+    
     const { cafeId, stationType, consoleType, bookingDate, startTime, endTime } = req.query;
 
-    console.log('🎯 [AVAILABLE_STATIONS] ========================================');
-    console.log('🎯 [AVAILABLE_STATIONS] Request:', { cafeId, stationType, bookingDate, startTime, endTime });
-
     if (!cafeId || !stationType || !bookingDate || !startTime || !endTime) {
-      console.log('🎯 [AVAILABLE_STATIONS] ERROR: Missing required fields');
+      console.log('🎫 [AVAILABILITY] ERROR: Missing required fields');
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: cafeId, stationType, bookingDate, startTime, endTime'
       });
     }
 
+    console.log('🎫 [AVAILABILITY] Checking availability for:', {
+      cafeId,
+      stationType,
+      consoleType,
+      bookingDate,
+      startTime,
+      endTime
+    });
+
     const cafe = await getCafeData(cafeId);
     if (!cafe) {
-      console.log('🎯 [AVAILABLE_STATIONS] ERROR: Cafe not found');
       return res.status(404).json({
         success: false,
         message: 'Cafe not found'
       });
     }
-    console.log('🎯 [AVAILABLE_STATIONS] Cafe found:', cafe.name);
-    console.log('🎯 [AVAILABLE_STATIONS] Cafe hours:', cafe.openingTime, 'to', cafe.closingTime);
 
     // Validate time is within cafe hours with proper midnight crossing support
+    console.log('🎫 [AVAILABILITY] ========================================');
+    console.log('🎫 [AVAILABILITY] 🕐 PARSING TIMES');
+    console.log('🎫 [AVAILABILITY] Raw startTime from query:', startTime);
+    console.log('🎫 [AVAILABILITY] Raw endTime from query:', endTime);
+    console.log('🎫 [AVAILABILITY] Raw openingTime from cafe:', cafe.openingTime);
+    console.log('🎫 [AVAILABILITY] Raw closingTime from cafe:', cafe.closingTime);
+    
     let bookingStartMins = timeToMinutes(startTime);
     let bookingEndMins = timeToMinutes(endTime);
     const cafeOpenMins = timeToMinutes(cafe.openingTime);
     let cafeCloseMins = timeToMinutes(cafe.closingTime);
-
-    console.log('🎯 [AVAILABLE_STATIONS] Time validation:');
-    console.log(`🎯   Booking: ${startTime} (${bookingStartMins}m) → ${endTime} (${bookingEndMins}m)`);
-    console.log(`🎯   Cafe: ${cafe.openingTime} (${cafeOpenMins}m) → ${cafe.closingTime} (${cafeCloseMins}m)`);
+    
+    console.log('🎫 [AVAILABILITY] Parsed times (in minutes):');
+    console.log('🎫 [AVAILABILITY] - bookingStartMins:', bookingStartMins, `(${Math.floor(bookingStartMins / 60)}:${String(bookingStartMins % 60).padStart(2, '0')})`);
+    console.log('🎫 [AVAILABILITY] - bookingEndMins:', bookingEndMins, `(${Math.floor(bookingEndMins / 60)}:${String(bookingEndMins % 60).padStart(2, '0')})`);
+    console.log('🎫 [AVAILABILITY] - cafeOpenMins:', cafeOpenMins, `(${Math.floor(cafeOpenMins / 60)}:${String(cafeOpenMins % 60).padStart(2, '0')})`);
+    console.log('🎫 [AVAILABILITY] - cafeCloseMins:', cafeCloseMins, `(${Math.floor(cafeCloseMins / 60)}:${String(cafeCloseMins % 60).padStart(2, '0')})`);
+    
+    // Check if 12:00 is being interpreted correctly
+    if (startTime === '12:00' || startTime.startsWith('12:00')) {
+      console.log('🎫 [AVAILABILITY] ⚠️ START TIME IS 12:00 - VERIFYING:');
+      console.log('🎫 [AVAILABILITY] - Raw string:', startTime);
+      console.log('🎫 [AVAILABILITY] - Parsed minutes:', bookingStartMins);
+      console.log('🎫 [AVAILABILITY] - Should be 720 minutes (12:00 PM / NOON)');
+      console.log('🎫 [AVAILABILITY] - Is correct (720)?', bookingStartMins === 720);
+      if (bookingStartMins !== 720) {
+        console.log('🎫 [AVAILABILITY] ❌ ERROR: 12:00 parsed incorrectly!');
+      } else {
+        console.log('🎫 [AVAILABILITY] ✅ 12:00 parsed correctly as NOON (12:00 PM)');
+      }
+    }
+    console.log('🎫 [AVAILABILITY] ========================================');
 
     // Detect if cafe crosses midnight (e.g., 09:00 to 01:00)
     const crossesMidnight = cafeCloseMins < cafeOpenMins;
@@ -549,35 +674,29 @@ const getAvailableStationsAPI = async (req, res) => {
     if (crossesMidnight) {
       // Adjust closing time to next day
       cafeCloseMins += 24 * 60;
-      console.log(`🎯   Cafe crosses midnight, adjusted close: ${cafeCloseMins}m`);
       
       // If booking start is after midnight (e.g., 00:30 = 30 mins)
       // and less than opening time, it's likely an after-midnight booking
       if (bookingStartMins < cafeOpenMins) {
         bookingStartMins += 24 * 60;
-        console.log(`🎯   Booking starts after midnight, adjusted start: ${bookingStartMins}m`);
       }
       
       // If booking end is less than adjusted start, it needs adjustment too
       if (bookingEndMins < timeToMinutes(startTime)) {
         bookingEndMins += 24 * 60;
-        console.log(`🎯   Booking end crosses midnight, adjusted end: ${bookingEndMins}m`);
       } else if (bookingStartMins >= 24 * 60 && bookingEndMins < bookingStartMins) {
         // Both start and end are after midnight
         bookingEndMins += 24 * 60;
-        console.log(`🎯   Booking end also after midnight, adjusted end: ${bookingEndMins}m`);
       }
     } else {
       // Normal same-day operation - adjust end if it crosses midnight
       if (bookingEndMins < bookingStartMins) {
         bookingEndMins += 24 * 60;
-        console.log(`🎯   Booking crosses midnight, adjusted end: ${bookingEndMins}m`);
       }
     }
 
     // Now validate with adjusted times
     if (bookingStartMins < cafeOpenMins) {
-      console.log(`🎯 [AVAILABLE_STATIONS] ERROR: Start time before opening (${bookingStartMins} < ${cafeOpenMins})`);
       const formatTime = (t) => t ? t.substring(0, 5) : '';
       return res.status(400).json({
         success: false,
@@ -588,7 +707,6 @@ const getAvailableStationsAPI = async (req, res) => {
     }
 
     if (bookingEndMins > cafeCloseMins) {
-      console.log(`🎯 [AVAILABLE_STATIONS] ERROR: End time after closing (${bookingEndMins} > ${cafeCloseMins})`);
       const formatTime = (t) => t ? t.substring(0, 5) : '';
       return res.status(400).json({
         success: false,
@@ -597,14 +715,10 @@ const getAvailableStationsAPI = async (req, res) => {
         totalStations: 0
       });
     }
-    
-    console.log('🎯 [AVAILABLE_STATIONS] Time validation PASSED!');
 
     const maxStations = getMaxStations(cafe, stationType, consoleType);
-    console.log('🎯 [AVAILABLE_STATIONS] Max stations:', maxStations);
     
     if (maxStations === 0) {
-      console.log('🎯 [AVAILABLE_STATIONS] No stations of this type');
       return res.json({
         success: true,
         data: {
@@ -615,16 +729,44 @@ const getAvailableStationsAPI = async (req, res) => {
       });
     }
 
-    console.log('🎯 [AVAILABLE_STATIONS] Checking availability...');
+    console.log('🎫 [AVAILABILITY] Calculating available stations...');
     const availableStations = await getAvailableStations(
       cafeId, stationType, consoleType, bookingDate, startTime, endTime, maxStations
     );
 
-    console.log('🎯 [AVAILABLE_STATIONS] Available stations:', availableStations);
-    console.log('🎯 [AVAILABLE_STATIONS] Available count:', availableStations.length);
+    console.log('🎫 [AVAILABILITY] Available stations found:', availableStations);
+    console.log('🎫 [AVAILABILITY] Available count:', availableStations.length);
+    console.log('🎫 [AVAILABILITY] First available:', availableStations.length > 0 ? availableStations[0] : null);
 
     const durationHours = calculateDuration(startTime, endTime);
+    
+    console.log('🎫 [AVAILABILITY] ========================================');
+    console.log('🎫 [AVAILABILITY] 📊 DURATION CALCULATION');
+    console.log('🎫 [AVAILABILITY] Start Time:', startTime, `(${bookingStartMins} minutes = ${Math.floor(bookingStartMins / 60)}:${String(bookingStartMins % 60).padStart(2, '0')})`);
+    console.log('🎫 [AVAILABILITY] End Time:', endTime, `(${bookingEndMins} minutes = ${Math.floor(bookingEndMins / 60)}:${String(bookingEndMins % 60).padStart(2, '0')})`);
+    console.log('🎫 [AVAILABILITY] Duration Hours:', durationHours);
+    console.log('🎫 [AVAILABILITY] Duration Minutes:', durationHours * 60);
+    
+    // Verify 12:00 interpretation
+    if (startTime === '12:00' || startTime.startsWith('12:00')) {
+      console.log('🎫 [AVAILABILITY] ⚠️ VERIFICATION: Start time is 12:00');
+      console.log('🎫 [AVAILABILITY] - Raw string:', startTime);
+      console.log('🎫 [AVAILABILITY] - Parsed as:', bookingStartMins, 'minutes');
+      console.log('🎫 [AVAILABILITY] - This equals:', Math.floor(bookingStartMins / 60), 'hours and', bookingStartMins % 60, 'minutes');
+      console.log('🎫 [AVAILABILITY] - Should be 720 minutes (12:00 PM / NOON)');
+      console.log('🎫 [AVAILABILITY] - Is correct?', bookingStartMins === 720 ? '✅ YES (12:00 PM)' : '❌ NO (ERROR!)');
+    }
+    console.log('🎫 [AVAILABILITY] ========================================');
+    
     const hourlyRate = getHourlyRate(cafe, stationType, consoleType);
+    // Calculate exact amount with decimal precision (no rounding)
+    const estimatedTotal = parseFloat((durationHours * hourlyRate).toFixed(2));
+
+    console.log('🎫 [AVAILABILITY] Pricing calculated:', {
+      durationHours,
+      hourlyRate,
+      estimatedTotal
+    });
 
     const response = {
       success: true,
@@ -636,16 +778,18 @@ const getAvailableStationsAPI = async (req, res) => {
         pricing: {
           durationHours,
           hourlyRate,
-          estimatedTotal: durationHours * hourlyRate
+          estimatedTotal
         }
       }
     };
 
-    console.log('🎯 [AVAILABLE_STATIONS] Sending response:', JSON.stringify(response, null, 2));
-    console.log('🎯 [AVAILABLE_STATIONS] ========================================');
+    console.log('🎫 [AVAILABILITY] ✅ RESPONSE SENT');
+    console.log('🎫 [AVAILABILITY] ========================================');
     res.json(response);
   } catch (error) {
-    console.error('Get available stations error:', error);
+    console.error('🎫 [AVAILABILITY] ❌ ERROR:', error);
+    console.error('🎫 [AVAILABILITY] Error stack:', error.stack);
+    console.error('🎫 [AVAILABILITY] Request ID:', requestId);
     res.status(500).json({
       success: false,
       message: 'Server error'
@@ -680,7 +824,6 @@ const getMyBookings = async (req, res) => {
         .get();
     } catch (indexError) {
       // Fallback: If index doesn't exist, query without orderBy and sort client-side
-      console.log('Index not ready, using fallback query for getMyBookings');
       snapshot = await db.collection('bookings')
         .where('userId', '==', req.user.id)
         .get();
@@ -886,9 +1029,7 @@ const cancelBooking = async (req, res) => {
           user: req.user
         };
         const refundRes = {
-          json: (data) => {
-            console.log('Refund initiated:', data);
-          },
+          json: (data) => {},
           status: (code) => ({ json: (data) => {} })
         };
         await initiateRefund(refundReq, refundRes);
@@ -915,10 +1056,9 @@ const cancelBooking = async (req, res) => {
     // Delete community post (remove from community feed)
     try {
       await deleteCommunityPost(req.params.id);
-      console.log('🌐 Community post deleted for cancelled booking');
     } catch (communityError) {
       // Don't fail cancellation if community post deletion fails
-      console.error('🌐 Failed to delete community post:', communityError);
+      console.error('Failed to delete community post:', communityError);
     }
 
     res.json({
@@ -982,7 +1122,6 @@ const getCafeBookings = async (req, res) => {
         .get();
     } catch (indexError) {
       // Fallback: Query without orderBy and sort client-side
-      console.log('Index not ready for getCafeBookings, using fallback query');
       snapshot = await query.get();
       needsClientSort = true;
     }
@@ -1151,7 +1290,8 @@ const checkAvailability = async (req, res) => {
 
     const durationHours = calculateDuration(startTime, endTime);
     const hourlyRate = getHourlyRate(cafe, stationType, consoleType);
-    const estimatedCost = durationHours * hourlyRate;
+    // Calculate exact amount with decimal precision (no rounding)
+    const estimatedCost = parseFloat((durationHours * hourlyRate).toFixed(2));
     const maxStations = getMaxStations(cafe, stationType, consoleType);
 
     res.json({

@@ -158,7 +158,7 @@ class Booking {
       case 'cancelled':
         return 0xFFFF003C; // Red
       case 'completed':
-        return 0xFF00E5FF; // Cyan
+        return 0xFF3B82F6; // rgb(59, 130, 246)
       default:
         return 0xFFB3B3B3; // Grey
     }

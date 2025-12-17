@@ -24,6 +24,14 @@ final dioProvider = Provider<Dio>((ref) {
   // Token cache - shared across all requests
   String? _cachedToken;
   DateTime? _tokenExpiry;
+  String? _cachedUserId; // Store user ID to validate token belongs to current user
+
+  // Function to clear token cache (can be called from outside)
+  void clearTokenCache() {
+    _cachedToken = null;
+    _tokenExpiry = null;
+    _cachedUserId = null;
+  }
 
   // Add interceptors
   dio.interceptors.add(
@@ -31,30 +39,43 @@ final dioProvider = Provider<Dio>((ref) {
       onRequest: (options, handler) async {
         // Add Firebase ID token to requests with caching
         try {
-          // Refresh token if expired or not cached
-          if (_cachedToken == null || 
-              _tokenExpiry == null || 
-              DateTime.now().isAfter(_tokenExpiry!)) {
-            AppLogger.d('🌐 [API_CLIENT] Getting Firebase token...');
-            _cachedToken = await FirebaseService.getIdToken();
-            // Cache token for 50 minutes (tokens expire in ~1 hour)
-            _tokenExpiry = DateTime.now().add(const Duration(minutes: 50));
-            
-            if (_cachedToken != null) {
-              AppLogger.d('🌐 [API_CLIENT] Token obtained: ${_cachedToken!.substring(0, 20)}...');
-            } else {
-              AppLogger.w('🌐 [API_CLIENT] WARNING: No token available!');
-            }
+          // Check if user is still signed in - clear cache if not
+          final currentUser = FirebaseService.currentUser;
+          if (currentUser == null) {
+            clearTokenCache();
           } else {
-            AppLogger.d('🌐 [API_CLIENT] Using cached token');
+            final currentUserId = currentUser.uid;
+            
+            // CRITICAL: Check if cached token belongs to current user
+            // If user ID changed (e.g., after logout/login with different account), clear cache
+            if (_cachedUserId != null && _cachedUserId != currentUserId) {
+              AppLogger.w('🌐 [API_CLIENT] Cached token belongs to different user, clearing cache');
+              clearTokenCache();
+            }
+            
+            // Refresh token if expired, not cached, or user changed
+            if (_cachedToken == null || 
+                _tokenExpiry == null || 
+                _cachedUserId == null ||
+                DateTime.now().isAfter(_tokenExpiry!)) {
+              _cachedToken = await FirebaseService.getIdToken(forceRefresh: true);
+              // Cache token for 50 minutes (tokens expire in ~1 hour)
+              _tokenExpiry = DateTime.now().add(const Duration(minutes: 50));
+              _cachedUserId = currentUserId; // Store user ID with token
+              
+              if (_cachedToken == null) {
+                AppLogger.w('🌐 [API_CLIENT] WARNING: No token available!');
+              }
+            }
           }
           
           if (_cachedToken != null) {
             options.headers['Authorization'] = 'Bearer $_cachedToken';
-            AppLogger.d('🌐 [API_CLIENT] Authorization header set');
           }
         } catch (e) {
           AppLogger.e('🌐 [API_CLIENT] Error getting token', e);
+          // Clear cache on error
+          clearTokenCache();
         }
         return handler.next(options);
       },
@@ -65,8 +86,7 @@ final dioProvider = Provider<Dio>((ref) {
         // Handle 401 - Token expired or invalid
         if (error.response?.statusCode == 401) {
           // Clear cached token on 401
-          _cachedToken = null;
-          _tokenExpiry = null;
+          clearTokenCache();
           AppLogger.w('🌐 [API_CLIENT] Token expired (401), clearing cache');
           // Sign out from Firebase Auth
           await FirebaseService.auth.signOut();

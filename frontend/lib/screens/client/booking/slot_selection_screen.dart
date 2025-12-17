@@ -14,7 +14,8 @@ import '../../../services/booking_service.dart';
 import '../../../models/booking_model.dart';
 import '../../../widgets/custom_button.dart';
 import '../../../widgets/loading_widget.dart';
-import '../payment/payment_screen.dart';
+import '../payment/payment_screen_webview.dart';
+import 'booking_confirmation_screen.dart';
 
 /// Slot Selection Screen with Real-Time Availability
 class SlotSelectionScreen extends ConsumerStatefulWidget {
@@ -74,8 +75,6 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     int closeHour = int.tryParse(closeParts[0]) ?? 22;
     int closeMinute = closeParts.length > 1 ? (int.tryParse(closeParts[1]) ?? 0) : 0;
     
-    AppLogger.d('📅 [GENERATE_SLOTS] Original - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
-    
     // Store original values for validation
     final originalOpenHour = openHour;
     final originalCloseHour = closeHour;
@@ -85,7 +84,6 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     // Add 24 hours to closing hour for calculation
     if (crossesMidnight) {
       closeHour += 24;
-      AppLogger.d('📅 [GENERATE_SLOTS] Closing time is next day, adjusted close hour to: $closeHour');
     }
     
     // Round opening minute to nearest 30
@@ -95,8 +93,6 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       openMinute = 0;
       openHour++;
     }
-    
-    AppLogger.d('📅 [GENERATE_SLOTS] After rounding - Open: $openHour:$openMinute, Close: $closeHour:$closeMinute');
     
     // Generate 30-minute slots from opening to closing
     int currentHour = openHour;
@@ -117,15 +113,8 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       
       // Safety check to prevent infinite loop (max 48 slots = 24 hours)
       if (slots.length > 48) {
-        AppLogger.d('📅 [GENERATE_SLOTS] WARNING: Reached max slot limit (48)');
         break;
       }
-    }
-    
-    AppLogger.d('📅 [GENERATE_SLOTS] Generated ${slots.length} slots');
-    if (slots.isNotEmpty) {
-      AppLogger.d('📅 [GENERATE_SLOTS] First slot: ${slots.first}, Last slot: ${slots.last}');
-      AppLogger.d('📅 [GENERATE_SLOTS] Crosses midnight: $crossesMidnight');
     }
     
     setState(() {
@@ -168,13 +157,9 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
             AppLogger.d('📅 [SLOT_SELECTION] ERROR: Empty opening/closing times!');
           }
         });
-      } else {
-        AppLogger.d('📅 [SLOT_SELECTION] ERROR: Availability is null or widget unmounted!');
-      }
-    } catch (e, stackTrace) {
-      AppLogger.d('📅 [SLOT_SELECTION] ERROR loading cafe hours: $e');
-      AppLogger.d('📅 [SLOT_SELECTION] Stack trace: $stackTrace');
-      debugPrint('Error loading cafe hours: $e');
+        }
+      } catch (e, stackTrace) {
+        debugPrint('Error loading cafe hours: $e');
     }
   }
 
@@ -256,15 +241,31 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
 
   /// Check if a time is valid as an end time given the current start time
   bool _isValidEndTime(String endTime) {
-    if (_startTime == null || _availability == null) return false;
+    AppLogger.d('📅 [SLOT_SELECTION] ========================================');
+    AppLogger.d('📅 [SLOT_SELECTION] 🔍 VALIDATING END TIME');
+    AppLogger.d('📅 [SLOT_SELECTION] Start Time: ${_startTime ?? "null"}');
+    AppLogger.d('📅 [SLOT_SELECTION] End Time: $endTime');
+    
+    if (_startTime == null || _availability == null) {
+      AppLogger.d('📅 [SLOT_SELECTION] ❌ Invalid: startTime or availability is null');
+      AppLogger.d('📅 [SLOT_SELECTION] ========================================');
+      return false;
+    }
 
     final startMins = _timeToMinutes(_startTime!);
     final endMins = _timeToMinutes(endTime);
     final openMins = _timeToMinutes(_availability!.openingTime);
     final closeMins = _timeToMinutes(_availability!.closingTime);
 
+    AppLogger.d('📅 [SLOT_SELECTION] Time Calculations:');
+    AppLogger.d('📅 [SLOT_SELECTION] - Start: ${_startTime} = $startMins minutes');
+    AppLogger.d('📅 [SLOT_SELECTION] - End: $endTime = $endMins minutes');
+    AppLogger.d('📅 [SLOT_SELECTION] - Opening: ${_availability!.openingTime} = $openMins minutes');
+    AppLogger.d('📅 [SLOT_SELECTION] - Closing: ${_availability!.closingTime} = $closeMins minutes');
+
     // Determine if cafe crosses midnight
     final crossesMidnight = closeMins < openMins;
+    AppLogger.d('📅 [SLOT_SELECTION] - Crosses Midnight: $crossesMidnight');
 
     int adjustedStartMins = startMins;
     int adjustedEndMins = endMins;
@@ -273,29 +274,70 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     if (crossesMidnight) {
       // Cafe crosses midnight (e.g., 09:00 to 01:00 next day)
       adjustedCloseMins = closeMins + 24 * 60; // 01:00 becomes 1500 mins (25:00)
+      AppLogger.d('📅 [SLOT_SELECTION] - Adjusted Closing: $adjustedCloseMins minutes (crosses midnight)');
 
       // If end time is after midnight (less than opening), adjust it
       if (endMins <= closeMins && endMins < openMins) {
         adjustedEndMins = endMins + 24 * 60;
+        AppLogger.d('📅 [SLOT_SELECTION] - Adjusted End: $adjustedEndMins minutes (after midnight)');
       }
 
       // If start time is after midnight, adjust it too
       if (startMins <= closeMins && startMins < openMins) {
         adjustedStartMins = startMins + 24 * 60;
+        AppLogger.d('📅 [SLOT_SELECTION] - Adjusted Start: $adjustedStartMins minutes (after midnight)');
       }
     }
 
+    AppLogger.d('📅 [SLOT_SELECTION] Adjusted Values:');
+    AppLogger.d('📅 [SLOT_SELECTION] - Adjusted Start: $adjustedStartMins minutes');
+    AppLogger.d('📅 [SLOT_SELECTION] - Adjusted End: $adjustedEndMins minutes');
+    AppLogger.d('📅 [SLOT_SELECTION] - Adjusted Close: $adjustedCloseMins minutes');
+
     // End time must be strictly after start time
     if (adjustedEndMins <= adjustedStartMins) {
+      AppLogger.d('📅 [SLOT_SELECTION] ❌ Invalid: End time ($adjustedEndMins) must be after start time ($adjustedStartMins)');
+      AppLogger.d('📅 [SLOT_SELECTION] ========================================');
+      return false;
+    }
+
+    // Minimum booking duration is 1 hour (60 minutes)
+    final durationMinutes = adjustedEndMins - adjustedStartMins;
+    AppLogger.d('📅 [SLOT_SELECTION] - Duration: $durationMinutes minutes (${durationMinutes / 60} hours)');
+    if (durationMinutes < 60) {
+      AppLogger.d('📅 [SLOT_SELECTION] ❌ Invalid: Duration ($durationMinutes minutes) is less than minimum (60 minutes)');
+      AppLogger.d('📅 [SLOT_SELECTION] ========================================');
       return false;
     }
 
     // End time must not exceed closing time
     if (adjustedEndMins > adjustedCloseMins) {
+      AppLogger.d('📅 [SLOT_SELECTION] ❌ Invalid: End time ($adjustedEndMins) exceeds closing time ($adjustedCloseMins)');
+      AppLogger.d('📅 [SLOT_SELECTION] ========================================');
       return false;
     }
 
+    AppLogger.d('📅 [SLOT_SELECTION] ✅ VALID END TIME');
+    AppLogger.d('📅 [SLOT_SELECTION] Selected Period: ${_startTime} (${DateTimeUtils.formatTimeString(_startTime!)}) to $endTime (${DateTimeUtils.formatTimeString(endTime)})');
+    AppLogger.d('📅 [SLOT_SELECTION] Duration: ${durationMinutes / 60} hours');
+    AppLogger.d('📅 [SLOT_SELECTION] ========================================');
     return true;
+  }
+
+  /// Check if selected duration meets minimum requirement (1 hour)
+  bool _meetsMinimumDuration() {
+    if (_startTime == null || _endTime == null) return false;
+    
+    final startMins = _timeToMinutes(_startTime!);
+    int endMins = _timeToMinutes(_endTime!);
+    
+    // Handle midnight crossing
+    if (endMins < startMins) {
+      endMins += 24 * 60;
+    }
+    
+    final durationMinutes = endMins - startMins;
+    return durationMinutes >= 60; // At least 1 hour
   }
 
   /// Check if two time ranges overlap
@@ -326,8 +368,11 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   /// OPTIMIZED: Fetch available stations from backend (server-side calculation)
   /// This is more efficient and prevents race conditions
   Future<void> _updateAvailableCount() async {
+    AppLogger.d('📅 [SLOT_SELECTION] _updateAvailableCount called');
+    
     // If no time selected yet, don't show availability
     if (_startTime == null || _endTime == null) {
+      AppLogger.d('📅 [SLOT_SELECTION] No time selected, clearing availability');
       if (mounted) {
         setState(() {
           _availableCount = 0;
@@ -337,6 +382,8 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       return;
     }
 
+    AppLogger.d('📅 [SLOT_SELECTION] Checking availability for: cafeId=${widget.cafeId}, stationType=$_stationType, bookingDate=${DateTimeUtils.formatDateForApi(_selectedDate)}, startTime=$_startTime, endTime=$_endTime');
+
     if (mounted) {
       setState(() => _isLoadingAvailability = true);
     }
@@ -344,6 +391,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     try {
       final bookingService = ref.read(bookingServiceProvider);
       
+      AppLogger.d('📅 [SLOT_SELECTION] Calling getAvailableStations API...');
       // Call optimized backend API (server calculates availability)
       final response = await bookingService.getAvailableStations(
         cafeId: widget.cafeId,
@@ -354,6 +402,11 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         endTime: _endTime!,
       );
 
+      AppLogger.d('📅 [SLOT_SELECTION] Availability response received');
+      AppLogger.d('📅 [SLOT_SELECTION] Available count: ${response.availableCount}');
+      AppLogger.d('📅 [SLOT_SELECTION] First available: ${response.firstAvailable}');
+      AppLogger.d('📅 [SLOT_SELECTION] Total stations: ${response.totalStations}');
+
       if (mounted) {
         setState(() {
           _availableCount = response.availableCount;
@@ -362,7 +415,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Error fetching available stations: $e');
+      AppLogger.e('📅 [SLOT_SELECTION] Error fetching available stations', e);
       if (mounted) {
         setState(() {
           _availableCount = 0;
@@ -376,27 +429,24 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   }
 
   Future<void> _confirmBooking() async {
-    AppLogger.d('🎫 ========================================');
-    AppLogger.d('🎫 [CONFIRM_BOOKING] METHOD CALLED!');
-    AppLogger.d('🎫 Start Time: $_startTime');
-    AppLogger.d('🎫 End Time: $_endTime');
-    AppLogger.d('🎫 Selected Station: $_selectedStation');
-    AppLogger.d('🎫 Available Count: $_availableCount');
-    AppLogger.d('🎫 ========================================');
+    AppLogger.d('📅 [SLOT_SELECTION] ========================================');
+    AppLogger.d('📅 [SLOT_SELECTION] === CONFIRM BOOKING STARTED ===');
     
     if (_startTime == null || _endTime == null) {
-      AppLogger.d('🎫 [CONFIRM_BOOKING] ERROR: Missing time slot');
+      AppLogger.w('📅 [SLOT_SELECTION] ERROR: Time slot not selected');
       SnackbarUtils.showError(context, 'Please select a time slot');
       return;
     }
 
     if (_selectedStation == null || _availableCount == 0) {
-      AppLogger.d('🎫 [CONFIRM_BOOKING] ERROR: No station selected or no availability');
-      AppLogger.d('🎫 Selected Station: $_selectedStation');
-      AppLogger.d('🎫 Available Count: $_availableCount');
+      AppLogger.w('📅 [SLOT_SELECTION] ERROR: No stations available');
+      AppLogger.w('📅 [SLOT_SELECTION] Selected station: $_selectedStation');
+      AppLogger.w('📅 [SLOT_SELECTION] Available count: $_availableCount');
       SnackbarUtils.showError(context, 'No stations available for this time slot');
       return;
     }
+
+    AppLogger.d('📅 [SLOT_SELECTION] Booking details: cafeId=${widget.cafeId}, stationType=$_stationType, stationNumber=$_selectedStation, bookingDate=${DateTimeUtils.formatDateForApi(_selectedDate)}, startTime=$_startTime, endTime=$_endTime');
 
     // Dismiss keyboard before API call
     FocusScope.of(context).unfocus();
@@ -405,18 +455,9 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       setState(() => _isLoading = true);
     }
 
+    AppLogger.d('📅 [SLOT_SELECTION] Calling booking service...');
     try {
       final bookingService = ref.read(bookingServiceProvider);
-
-      AppLogger.d('🎫 ========================================');
-      AppLogger.d('🎫 [SLOT_SELECTION] Creating booking request...');
-      AppLogger.d('🎫 Cafe ID: ${widget.cafeId}');
-      AppLogger.d('🎫 Station Type: $_stationType');
-      AppLogger.d('🎫 Station Number: $_selectedStation');
-      AppLogger.d('🎫 Date: ${DateTimeUtils.formatDateForApi(_selectedDate)}');
-      AppLogger.d('🎫 Start Time: $_startTime');
-      AppLogger.d('🎫 End Time: $_endTime');
-      AppLogger.d('🎫 ========================================');
 
       // Create booking with auto-assigned station
       final response = await bookingService.createBooking(
@@ -431,40 +472,106 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         ),
       );
 
-      AppLogger.d('🎫 [SLOT_SELECTION] Response received: ${response.success}');
-      AppLogger.d('🎫 [SLOT_SELECTION] Message: ${response.message}');
+      AppLogger.d('📅 [SLOT_SELECTION] Booking response received');
+      AppLogger.d('📅 [SLOT_SELECTION] Response success: ${response.success}');
+      AppLogger.d('📅 [SLOT_SELECTION] Response message: ${response.message}');
 
       if (!mounted) return;
 
       setState(() => _isLoading = false);
 
       if (response.success && response.booking != null) {
-        AppLogger.d('🎫 [SLOT_SELECTION] Booking created! Navigating to payment...');
-        // Navigate to payment screen
+        AppLogger.d('📅 [SLOT_SELECTION] ✅ Booking created successfully!');
+        AppLogger.d('📅 [SLOT_SELECTION] Booking ID: ${response.booking!.id}');
+        AppLogger.d('📅 [SLOT_SELECTION] Total Amount: ₹${response.booking!.totalAmount}');
+        AppLogger.d('📅 [SLOT_SELECTION] Navigating to payment screen...');
+        
+        // Navigate to payment screen and await result
         if (mounted) {
-          Navigator.push(
+          final paymentResult = await Navigator.push<bool>(
             context,
             MaterialPageRoute(
-              builder: (context) => PaymentScreen(
-                booking: response.booking!,
+              builder: (context) => PaymentScreenWebView(
+                bookingId: response.booking!.id,
                 amount: response.booking!.totalAmount,
+                firstName: response.booking!.user?.name,
+                email: response.booking!.user?.email,
+                phone: response.booking!.user?.phone,
+                productInfo: 'Booking ${response.booking!.id}',
               ),
             ),
           );
+          
+          AppLogger.d('📅 [SLOT_SELECTION] Payment screen returned');
+          AppLogger.d('📅 [SLOT_SELECTION] Payment result: $paymentResult');
+          
+          // Handle payment result
+          if (mounted) {
+            if (paymentResult == true) {
+              // Payment successful - fetch updated booking and show success screen
+              AppLogger.d('📅 [SLOT_SELECTION] ✅ Payment successful! Fetching updated booking...');
+              try {
+                final updatedBooking = await bookingService.getBookingById(response.booking!.id);
+                AppLogger.d('📅 [SLOT_SELECTION] Updated booking fetched: ${updatedBooking != null}');
+                if (updatedBooking != null && mounted) {
+                  AppLogger.d('📅 [SLOT_SELECTION] Navigating to confirmation screen...');
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BookingConfirmationScreen(
+                        bookingData: {'booking': updatedBooking.toJson()},
+                      ),
+                    ),
+                  );
+                } else {
+                  // Fallback: use original booking data
+                  AppLogger.w('📅 [SLOT_SELECTION] Using original booking data (fallback)');
+                  if (mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => BookingConfirmationScreen(
+                          bookingData: {'booking': response.booking!.toJson()},
+                        ),
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                AppLogger.e('📅 [SLOT_SELECTION] Error fetching updated booking', e);
+                // Still show success with original booking data
+                if (mounted) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BookingConfirmationScreen(
+                        bookingData: {'booking': response.booking!.toJson()},
+                      ),
+                    ),
+                  );
+                }
+              }
+            } else if (paymentResult == false) {
+              // Payment failed or cancelled
+              AppLogger.w('📅 [SLOT_SELECTION] ❌ Payment failed or cancelled');
+              SnackbarUtils.showError(context, 'Payment failed or was cancelled. Please try again.');
+              // Stay on slot selection screen
+            } else {
+              AppLogger.d('📅 [SLOT_SELECTION] Payment screen closed without result');
+            }
+            // If paymentResult is null, user just closed the screen - do nothing
+          }
         }
       } else {
         // Show error and stay on page
-        AppLogger.d('🎫 [SLOT_SELECTION] Booking failed: ${response.message}');
+        AppLogger.e('📅 [SLOT_SELECTION] ❌ Booking creation failed');
+        AppLogger.e('📅 [SLOT_SELECTION] Error message: ${response.message}');
         SnackbarUtils.showError(context, response.message);
         // Refresh availability in case it changed (but don't await)
         _updateAvailableCount();
       }
     } catch (e, stackTrace) {
-      AppLogger.d('🎫 ========================================');
-      AppLogger.d('🎫 [SLOT_SELECTION] BOOKING ERROR!');
-      AppLogger.d('🎫 Error: $e');
-      AppLogger.d('🎫 Stack trace: $stackTrace');
-      AppLogger.d('🎫 ========================================');
+      AppLogger.e('Booking error', e, stackTrace);
       if (mounted) {
         setState(() => _isLoading = false);
         SnackbarUtils.showError(context, 'Booking failed: $e');
@@ -477,6 +584,12 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     final cafe = ref.read(cafeProvider(widget.cafeId)).valueOrNull;
     if (cafe == null) return;
 
+    // Validate minimum duration (1 hour)
+    if (!_meetsMinimumDuration()) {
+      SnackbarUtils.showError(context, 'Minimum booking duration is 1 hour');
+      return;
+    }
+
     // Calculate duration and price
     final startMinutes = _timeToMinutes(_startTime!);
     int endMinutes = _timeToMinutes(_endTime!);
@@ -486,6 +599,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       endMinutes += 24 * 60; // Add 24 hours
     }
     
+    // Calculate exact duration in hours (preserve decimal precision)
     final durationHours = (endMinutes - startMinutes) / 60.0;
     
     // Get hourly rate
@@ -494,7 +608,9 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       hourlyRate = cafe.pcHourlyRate!;
     }
     
-    final totalAmount = hourlyRate * durationHours;
+    // Calculate exact amount with decimal precision (no rounding)
+    // Example: 1.5 hours * 100/hr = 150.0 (not 200)
+    final totalAmount = (hourlyRate * durationHours);
 
     // Check if booking is within 1 hour (for refund warning)
     final bookingDateTime = DateTime(
@@ -638,7 +754,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                       ),
                       const Spacer(),
                       Text(
-                        CurrencyUtils.formatINR(totalAmount),
+                        CurrencyUtils.formatINRExact(totalAmount),
                         style: const TextStyle(
                           color: AppColors.cyberCyan,
                           fontWeight: FontWeight.bold,
@@ -918,7 +1034,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Tap start time, then end time',
+                          'Tap start time, then end time (minimum 1 hour)',
                           style: TextStyle(
                             color: AppColors.textMuted,
                             fontSize: 12,
@@ -1072,63 +1188,154 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
 
                       return GestureDetector(
                         onTap: isPast ? null : () {
+                          AppLogger.d('📅 [SLOT_SELECTION] ========================================');
+                          AppLogger.d('📅 [SLOT_SELECTION] 🕐 TIME SLOT CLICKED');
+                          AppLogger.d('📅 [SLOT_SELECTION] Clicked Time: $time');
+                          AppLogger.d('📅 [SLOT_SELECTION] Clicked Time (Formatted): ${DateTimeUtils.formatTimeString(time)}');
+                          AppLogger.d('📅 [SLOT_SELECTION] Current State:');
+                          AppLogger.d('📅 [SLOT_SELECTION] - Start Time: ${_startTime ?? "null"} ${_startTime != null ? "(${DateTimeUtils.formatTimeString(_startTime!)})" : ""}');
+                          AppLogger.d('📅 [SLOT_SELECTION] - End Time: ${_endTime ?? "null"} ${_endTime != null ? "(${DateTimeUtils.formatTimeString(_endTime!)})" : ""}');
+                          AppLogger.d('📅 [SLOT_SELECTION] - Is Past: $isPast');
+                          AppLogger.d('📅 [SLOT_SELECTION] - Is In Closed Period: ${_isInClosedPeriod(time)}');
+                          
                           // Determine if we should fetch availability after setState
                           bool shouldFetch = false;
                           
                           // Calculate before setState
                           if (_startTime != null && _endTime == null) {
                             // Check if this time is valid as end time
-                            if (_isValidEndTime(time)) {
+                            final isValidEnd = _isValidEndTime(time);
+                            AppLogger.d('📅 [SLOT_SELECTION] Checking if valid end time: $isValidEnd');
+                            if (isValidEnd) {
                               shouldFetch = true; // Will set end time, need to fetch
+                              AppLogger.d('📅 [SLOT_SELECTION] ✅ Valid end time - will fetch availability');
+                            } else {
+                              final startMins = _timeToMinutes(_startTime!);
+                              int endMins = _timeToMinutes(time);
+                              if (endMins < startMins) {
+                                endMins += 24 * 60;
+                              }
+                              final durationMinutes = endMins - startMins;
+                              AppLogger.d('📅 [SLOT_SELECTION] ❌ Invalid end time:');
+                              AppLogger.d('📅 [SLOT_SELECTION] - Start Minutes: $startMins (${_startTime})');
+                              AppLogger.d('📅 [SLOT_SELECTION] - End Minutes: ${_timeToMinutes(time)} (raw), $endMins (adjusted)');
+                              AppLogger.d('📅 [SLOT_SELECTION] - Duration Minutes: $durationMinutes');
+                              AppLogger.d('📅 [SLOT_SELECTION] - Duration Hours: ${durationMinutes / 60}');
                             }
                           }
                           
                           setState(() {
                             if (_startTime == null) {
+                              AppLogger.d('📅 [SLOT_SELECTION] 📍 ACTION: Setting START time (first tap)');
                               // First tap: set start time
                               // Validate: start time must not be in closed period or past
                               if (!_isInClosedPeriod(time) && !isPast) {
+                                AppLogger.d('📅 [SLOT_SELECTION] ✅ Validation passed - setting start time');
                                 _startTime = time;
                                 _endTime = null;
                                 _availableCount = 0;
                                 _selectedStation = null;
+                                AppLogger.d('📅 [SLOT_SELECTION] ✅ Start time set: $time (${DateTimeUtils.formatTimeString(time)})');
                               } else if (isPast) {
+                                AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Cannot select past time slot');
                                 SnackbarUtils.showError(context, 'Cannot select past time slots');
                               } else {
+                                AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Cannot start booking during closed hours');
                                 SnackbarUtils.showError(context, 'Cannot start booking during closed hours');
                               }
                             } else if (_endTime == null) {
+                              AppLogger.d('📅 [SLOT_SELECTION] 📍 ACTION: Setting END time (second tap)');
                               // Second tap: set end time (must be after start, considering midnight)
                               if (_isValidEndTime(time)) {
+                                AppLogger.d('📅 [SLOT_SELECTION] ✅ Validation passed - setting end time');
                                 _endTime = time;
+                                
+                                // Calculate duration for logging
+                                final startMins = _timeToMinutes(_startTime!);
+                                int endMins = _timeToMinutes(_endTime!);
+                                if (endMins < startMins) {
+                                  endMins += 24 * 60;
+                                }
+                                final durationMinutes = endMins - startMins;
+                                final durationHours = durationMinutes / 60;
+                                
+                                AppLogger.d('📅 [SLOT_SELECTION] ✅ End time set: $time (${DateTimeUtils.formatTimeString(time)})');
+                                AppLogger.d('📅 [SLOT_SELECTION] 📊 SELECTED TIME PERIOD:');
+                                AppLogger.d('📅 [SLOT_SELECTION] - Start: ${_startTime} (${DateTimeUtils.formatTimeString(_startTime!)})');
+                                AppLogger.d('📅 [SLOT_SELECTION] - End: ${_endTime} (${DateTimeUtils.formatTimeString(_endTime!)})');
+                                AppLogger.d('📅 [SLOT_SELECTION] - Duration: ${durationHours.toStringAsFixed(2)} hours ($durationMinutes minutes)');
+                                AppLogger.d('📅 [SLOT_SELECTION] - Start Minutes: $startMins');
+                                AppLogger.d('📅 [SLOT_SELECTION] - End Minutes: ${_timeToMinutes(_endTime!)} (raw), $endMins (adjusted)');
                               } else {
+                                AppLogger.d('📅 [SLOT_SELECTION] ❌ Validation failed - invalid end time');
+                                // Check if it's a duration issue
+                                final startMins = _timeToMinutes(_startTime!);
+                                int endMins = _timeToMinutes(time);
+                                if (endMins < startMins) {
+                                  endMins += 24 * 60;
+                                }
+                                final durationMinutes = endMins - startMins;
+                                
+                                AppLogger.d('📅 [SLOT_SELECTION] Validation Details:');
+                                AppLogger.d('📅 [SLOT_SELECTION] - Start: ${_startTime} (${DateTimeUtils.formatTimeString(_startTime!)}) = $startMins minutes');
+                                AppLogger.d('📅 [SLOT_SELECTION] - End: $time (${DateTimeUtils.formatTimeString(time)}) = ${_timeToMinutes(time)} minutes (raw), $endMins minutes (adjusted)');
+                                AppLogger.d('📅 [SLOT_SELECTION] - Duration: ${durationMinutes} minutes (${durationMinutes / 60} hours)');
+                                
+                                if (durationMinutes > 0 && durationMinutes < 60) {
+                                  AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Error: Minimum booking duration is 1 hour');
+                                  SnackbarUtils.showError(context, 'Minimum booking duration is 1 hour');
+                                } else if (endMins <= startMins) {
+                                  AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Error: End time must be after start time');
+                                  SnackbarUtils.showError(context, 'End time must be after start time');
+                                } else {
+                                  AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Error: Selected time is outside cafe hours');
+                                  SnackbarUtils.showError(context, 'Selected time is outside cafe hours');
+                                }
+                                
                                 // Clicked invalid time, reset to new start
                                 if (!_isInClosedPeriod(time) && !isPast) {
+                                  AppLogger.d('📅 [SLOT_SELECTION] 🔄 Resetting to new start time: $time');
                                   _startTime = time;
                                   _endTime = null;
                                   _availableCount = 0;
                                   _selectedStation = null;
                                 } else if (isPast) {
+                                  AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Cannot select past time slots');
                                   SnackbarUtils.showError(context, 'Cannot select past time slots');
                                 } else {
+                                  AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Cannot start booking during closed hours');
                                   SnackbarUtils.showError(context, 'Cannot start booking during closed hours');
                                 }
                               }
                             } else {
+                              AppLogger.d('📅 [SLOT_SELECTION] 📍 ACTION: Resetting selection (third tap)');
                               // Third tap: reset and start new selection
                               if (!isPast) {
+                                AppLogger.d('📅 [SLOT_SELECTION] 🔄 Resetting to new start time: $time');
+                                AppLogger.d('📅 [SLOT_SELECTION] Previous selection was:');
+                                AppLogger.d('📅 [SLOT_SELECTION] - Start: ${_startTime} (${DateTimeUtils.formatTimeString(_startTime!)})');
+                                AppLogger.d('📅 [SLOT_SELECTION] - End: ${_endTime} (${DateTimeUtils.formatTimeString(_endTime!)})');
                                 _startTime = time;
                                 _endTime = null;
                                 _availableCount = 0;
                                 _selectedStation = null;
+                                AppLogger.d('📅 [SLOT_SELECTION] ✅ New start time set: $time (${DateTimeUtils.formatTimeString(time)})');
                               } else {
+                                AppLogger.w('📅 [SLOT_SELECTION] ⚠️ Cannot select past time slots');
                                 SnackbarUtils.showError(context, 'Cannot select past time slots');
                               }
                             }
                           });
                           
+                          AppLogger.d('📅 [SLOT_SELECTION] Final State After Selection:');
+                          AppLogger.d('📅 [SLOT_SELECTION] - Start Time: ${_startTime ?? "null"} ${_startTime != null ? "(${DateTimeUtils.formatTimeString(_startTime!)})" : ""}');
+                          AppLogger.d('📅 [SLOT_SELECTION] - End Time: ${_endTime ?? "null"} ${_endTime != null ? "(${DateTimeUtils.formatTimeString(_endTime!)})" : ""}');
+                          AppLogger.d('📅 [SLOT_SELECTION] - Should Fetch Availability: $shouldFetch');
+                          AppLogger.d('📅 [SLOT_SELECTION] ========================================');
+                          
                           // Call async function AFTER setState completes
                           if (shouldFetch) {
+                            AppLogger.d('📅 [SLOT_SELECTION] 🔄 Fetching availability for selected time period...');
                             _updateAvailableCount();
                           }
                         },
@@ -1199,7 +1406,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                     ? 'NO AVAILABILITY'
                     : 'SELECT TIME SLOT',
             isLoading: _isLoading,
-            onPressed: _startTime != null && _endTime != null && _availableCount > 0
+            onPressed: _startTime != null && _endTime != null && _availableCount > 0 && _meetsMinimumDuration()
                 ? _showBookingConfirmation
                 : null,
           ),

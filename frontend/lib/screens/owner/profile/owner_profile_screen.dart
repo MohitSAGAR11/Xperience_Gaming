@@ -93,9 +93,7 @@ class OwnerProfileScreen extends ConsumerWidget {
             _ProfileMenuItem(
               icon: Icons.help_outline,
               title: 'Help & Support',
-              onTap: () {
-                // TODO: Navigate to help
-              },
+              onTap: () => context.push(Routes.ownerHelpSupport),
             ),
             const SizedBox(height: 32),
 

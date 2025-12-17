@@ -28,12 +28,40 @@ class DateTimeUtils {
   }
 
   /// Format time from string "14:30:00" to "2:30 PM"
+  /// Handles 12:00 correctly (12:00 = noon = 12:00 PM, 00:00 = midnight = 12:00 AM)
   static String formatTimeString(String time) {
     final parts = time.split(':');
     final hour = int.parse(parts[0]);
     final minute = int.parse(parts[1]);
-    final dt = DateTime(2024, 1, 1, hour, minute);
-    return DateFormat('h:mm a').format(dt);
+    
+    // Handle 12-hour format conversion
+    // 00:00 = 12:00 AM (midnight)
+    // 12:00 = 12:00 PM (noon)
+    // 13:00 = 1:00 PM
+    // etc.
+    int displayHour = hour;
+    String period = 'AM';
+    
+    if (hour == 0) {
+      // Midnight: 00:00 → 12:00 AM
+      displayHour = 12;
+      period = 'AM';
+    } else if (hour == 12) {
+      // Noon: 12:00 → 12:00 PM
+      displayHour = 12;
+      period = 'PM';
+    } else if (hour > 12) {
+      // Afternoon: 13:00 → 1:00 PM, 14:00 → 2:00 PM, etc.
+      displayHour = hour - 12;
+      period = 'PM';
+    } else {
+      // Morning: 1:00 → 1:00 AM, 11:00 → 11:00 AM
+      displayHour = hour;
+      period = 'AM';
+    }
+    
+    final minuteStr = minute.toString().padLeft(2, '0');
+    return '$displayHour:$minuteStr $period';
   }
 
   /// Parse time string "14:30" to TimeOfDay
@@ -80,12 +108,22 @@ class DateTimeUtils {
 
 /// Currency Utilities
 class CurrencyUtils {
-  /// Format amount as "₹1,500"
+  /// Format amount as "₹1,500" (rounded for display)
   static String formatINR(double amount) {
     final formatter = NumberFormat.currency(
       locale: 'en_IN',
       symbol: '₹',
       decimalDigits: 0,
+    );
+    return formatter.format(amount);
+  }
+
+  /// Format amount as "₹1,500.50" (with decimals for exact amounts)
+  static String formatINRExact(double amount) {
+    final formatter = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 2,
     );
     return formatter.format(amount);
   }
@@ -181,7 +219,7 @@ class BookingStatusUtils {
       case AppConstants.statusCancelled:
         return const Color(0xFFFF003C); // Cyber Red
       case AppConstants.statusCompleted:
-        return const Color(0xFF00E5FF); // Cyber Cyan
+        return const Color(0x803B82F6); // rgba(59, 130, 246, 0.5) - 0x80 = 50% alpha
       default:
         return Colors.grey;
     }
@@ -274,7 +312,7 @@ class SnackbarUtils {
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.info, color: Color(0xFF00E5FF)),
+            const Icon(Icons.info, color: Color(0x803B82F6)), // rgba(59, 130, 246, 0.5) as hex with alpha
             const SizedBox(width: 12),
             Expanded(child: Text(message)),
           ],

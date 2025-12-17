@@ -51,6 +51,7 @@ class Routes {
   static const String ownerProfile = '/owner/profile';
   static const String editOwnerProfile = '/owner/profile/edit';
   static const String earningsAnalytics = '/owner/earnings-analytics';
+  static const String ownerHelpSupport = '/owner/help-support';
 }
 
 /// Router Configuration
@@ -197,6 +198,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.earningsAnalytics,
         name: 'earningsAnalytics',
         builder: (context, state) => const EarningsAnalyticsScreen(),
+      ),
+      GoRoute(
+        path: Routes.ownerHelpSupport,
+        name: 'ownerHelpSupport',
+        builder: (context, state) => const HelpSupportScreen(),
       ),
     ],
     

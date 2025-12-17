@@ -1,38 +1,117 @@
 const admin = require('firebase-admin');
 const { db } = require('../config/firebase');
-const multer = require('multer');
+const busboy = require('busboy');
 const path = require('path');
 
-// Configure multer for memory storage
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    console.log('📸 [FILE_FILTER] Checking file:', {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      fieldname: file.fieldname,
+/**
+ * Middleware to parse multipart/form-data using busboy
+ * This works even when Firebase Functions has already consumed the body stream
+ * by using req.rawBody if available, or reconstructing from req.body
+ */
+const parseMultipart = (req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  
+  if (!contentType.includes('multipart/form-data')) {
+    return next();
+  }
+
+  // Get the raw body - Firebase Functions v2 may provide this
+  let bodyBuffer = null;
+  
+  if (req.rawBody) {
+    // Use rawBody if available (Firebase Functions v2 sometimes provides this)
+    bodyBuffer = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from(req.rawBody);
+  } else if (req.body && typeof req.body === 'string') {
+    // If body was parsed as string, convert back to buffer
+    bodyBuffer = Buffer.from(req.body, 'binary');
+  } else {
+    // Last resort: try to get from readable stream (unlikely to work if already consumed)
+    console.error('No raw body available and stream already consumed');
+    return res.status(400).json({
+      success: false,
+      message: 'Unable to process file upload: request body was already consumed'
+    });
+  }
+
+  const bb = busboy({
+    headers: req.headers,
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    }
+  });
+
+  const fileData = {
+    buffer: null,
+    filename: null,
+    mimetype: null,
+    encoding: null,
+  };
+
+  let fileReceived = false;
+
+  bb.on('file', (name, file, info) => {
+    const { filename, encoding, mimeType } = info;
+
+    // Validate file type
+    const allowedTypes = /jpeg|jpg|png|webp/i;
+    const extname = allowedTypes.test(path.extname(filename).toLowerCase());
+    const mimetype = allowedTypes.test(mimeType);
+
+    if (!mimetype || !extname) {
+      file.resume(); // Drain the file stream
+      return res.status(400).json({
+        success: false,
+        message: 'Only image files (JPEG, JPG, PNG, WEBP) are allowed!'
+      });
+    }
+
+    fileReceived = true;
+    fileData.filename = filename;
+    fileData.mimetype = mimeType;
+    fileData.encoding = encoding;
+
+    const chunks = [];
+    file.on('data', (chunk) => {
+      chunks.push(chunk);
     });
 
-    const allowedTypes = /jpeg|jpg|png|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    file.on('end', () => {
+      fileData.buffer = Buffer.concat(chunks);
+    });
+  });
 
-    console.log('📸 [FILE_FILTER] Extension check:', extname);
-    console.log('📸 [FILE_FILTER] Mimetype check:', mimetype);
-
-    if (mimetype && extname) {
-      console.log('📸 [FILE_FILTER] ✅ File accepted');
-      return cb(null, true);
-    } else {
-      console.log('📸 [FILE_FILTER] ❌ File rejected');
-      cb(new Error('Only image files (JPEG, JPG, PNG, WEBP) are allowed!'));
+  bb.on('finish', () => {
+    if (!fileReceived || !fileData.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided'
+      });
     }
-  },
-});
+
+    // Attach file to request object (Multer-compatible format)
+    req.file = {
+      fieldname: 'image',
+      originalname: fileData.filename,
+      encoding: fileData.encoding,
+      mimetype: fileData.mimetype,
+      buffer: fileData.buffer,
+      size: fileData.buffer.length,
+    };
+
+    next();
+  });
+
+  bb.on('error', (err) => {
+    console.error('Busboy parsing error:', err);
+    res.status(400).json({
+      success: false,
+      message: `Upload error: ${err.message}`
+    });
+  });
+
+  // Write the body buffer to busboy
+  bb.end(bodyBuffer);
+};
 
 /**
  * @desc    Upload cafe image to Firebase Storage
@@ -41,7 +120,6 @@ const upload = multer({
  */
 const uploadCafeImage = async (req, res) => {
   try {
-    console.log('📸 [UPLOAD] Starting image upload for cafe:', req.params.cafeId);
 
     if (!req.file) {
       return res.status(400).json({
@@ -77,8 +155,6 @@ const uploadCafeImage = async (req, res) => {
     const filename = `${cafeId}_${timestamp}${path.extname(req.file.originalname)}`;
     const filepath = `cafes/${cafeId}/${filename}`;
 
-    console.log('📸 [UPLOAD] Uploading to path:', filepath);
-
     // Get Firebase Storage bucket
     const bucket = admin.storage().bucket();
     const file = bucket.file(filepath);
@@ -98,12 +174,11 @@ const uploadCafeImage = async (req, res) => {
     // Handle upload completion
     await new Promise((resolve, reject) => {
       stream.on('error', (error) => {
-        console.error('📸 [UPLOAD] Error:', error);
+        console.error('Upload error:', error);
         reject(error);
       });
 
       stream.on('finish', () => {
-        console.log('📸 [UPLOAD] File uploaded successfully');
         resolve();
       });
 
@@ -115,7 +190,6 @@ const uploadCafeImage = async (req, res) => {
 
     // Get public URL
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filepath}`;
-    console.log('📸 [UPLOAD] Public URL:', publicUrl);
 
     // Add URL to cafe's photos array
     const currentPhotos = cafe.photos || [];
@@ -125,8 +199,6 @@ const uploadCafeImage = async (req, res) => {
       photos: updatedPhotos,
       updatedAt: new Date()
     });
-
-    console.log('📸 [UPLOAD] Cafe photos updated. Total:', updatedPhotos.length);
 
     res.json({
       success: true,
@@ -138,7 +210,7 @@ const uploadCafeImage = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('📸 [UPLOAD] Error:', error);
+    console.error('Upload error:', error);
     res.status(500).json({
       success: false,
       message: 'Error uploading image',
@@ -157,8 +229,6 @@ const deleteCafeImage = async (req, res) => {
     const { imageUrl } = req.body;
     const cafeId = req.params.cafeId;
     const userId = req.user.id;
-
-    console.log('📸 [DELETE] Deleting image for cafe:', cafeId);
 
     if (!imageUrl) {
       return res.status(400).json({
@@ -198,14 +268,12 @@ const deleteCafeImage = async (req, res) => {
     }
 
     const filepath = urlParts[1];
-    console.log('📸 [DELETE] Deleting file:', filepath);
 
     // Delete file from Storage
     try {
       await bucket.file(filepath).delete();
-      console.log('📸 [DELETE] File deleted from Storage');
     } catch (storageError) {
-      console.warn('📸 [DELETE] File not found in Storage, continuing...');
+      // File may not exist, continue with removing from database
     }
 
     // Remove URL from cafe's photos array
@@ -217,8 +285,6 @@ const deleteCafeImage = async (req, res) => {
       updatedAt: new Date()
     });
 
-    console.log('📸 [DELETE] Photo removed from cafe. Remaining:', updatedPhotos.length);
-
     res.json({
       success: true,
       message: 'Image deleted successfully',
@@ -228,7 +294,7 @@ const deleteCafeImage = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('📸 [DELETE] Error:', error);
+    console.error('Delete image error:', error);
     res.status(500).json({
       success: false,
       message: 'Error deleting image',
@@ -238,7 +304,7 @@ const deleteCafeImage = async (req, res) => {
 };
 
 module.exports = {
-  upload,
+  parseMultipart,
   uploadCafeImage,
   deleteCafeImage
 };

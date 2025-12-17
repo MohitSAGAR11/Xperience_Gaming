@@ -43,6 +43,10 @@ class BookingService {
     required String startTime,
     required String endTime,
   }) async {
+    AppLogger.d('🎫 [BOOKING_SERVICE] ========================================');
+    AppLogger.d('🎫 [BOOKING_SERVICE] getAvailableStations called');
+    AppLogger.d('🎫 [BOOKING_SERVICE] Parameters: cafeId=$cafeId, stationType=$stationType, consoleType=$consoleType, bookingDate=$bookingDate, startTime=$startTime, endTime=$endTime');
+    
     final queryParams = <String, dynamic>{
       'cafeId': cafeId,
       'stationType': stationType,
@@ -55,15 +59,25 @@ class BookingService {
       queryParams['consoleType'] = consoleType;
     }
 
+    AppLogger.d('🎫 [BOOKING_SERVICE] Calling API: ${ApiConstants.bookings}/available-stations');
     final response = await _apiClient.get<Map<String, dynamic>>(
       '${ApiConstants.bookings}/available-stations',
       queryParameters: queryParams,
     );
 
+    AppLogger.d('🎫 [BOOKING_SERVICE] API response received');
+    AppLogger.d('🎫 [BOOKING_SERVICE] Response success: ${response.isSuccess}');
+    AppLogger.d('🎫 [BOOKING_SERVICE] Has data: ${response.data != null}');
+
     if (response.isSuccess && response.data != null) {
-      return AvailableStationsResponse.fromJson(response.data!);
+      final result = AvailableStationsResponse.fromJson(response.data!);
+      AppLogger.d('🎫 [BOOKING_SERVICE] Parsed response: availableCount=${result.availableCount}, totalStations=${result.totalStations}, firstAvailable=${result.firstAvailable}');
+      AppLogger.d('🎫 [BOOKING_SERVICE] ========================================');
+      return result;
     }
 
+    AppLogger.w('🎫 [BOOKING_SERVICE] API call failed or no data');
+    AppLogger.d('🎫 [BOOKING_SERVICE] ========================================');
     return AvailableStationsResponse(
       success: false,
       availableStations: [],

@@ -384,10 +384,16 @@ class AuthService {
 
   /// Logout user from Firebase Auth
   Future<bool> logout() async {
+    AppLogger.d('🔐 [AUTH_SERVICE] ========== AUTH SERVICE LOGOUT ==========');
     try {
+      AppLogger.d('🔐 [AUTH_SERVICE] Calling FirebaseService.signOut()...');
       await FirebaseService.signOut(); // This handles both Firebase and Google sign-out
+      AppLogger.d('🔐 [AUTH_SERVICE] ✅ FirebaseService.signOut() completed successfully');
+      AppLogger.d('🔐 [AUTH_SERVICE] ========== AUTH SERVICE LOGOUT SUCCESS ==========');
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.e('🔐 [AUTH_SERVICE] ❌ Error in FirebaseService.signOut()', e, stackTrace);
+      AppLogger.d('🔐 [AUTH_SERVICE] ========== AUTH SERVICE LOGOUT FAILED ==========');
       return false;
     }
   }

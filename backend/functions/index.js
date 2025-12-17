@@ -34,8 +34,9 @@ const backendUrl = defineString('BACKEND_URL', {
 });
 
 // Set storage bucket env variable BEFORE Firebase initialization
-// This ensures firebase.js can access it during initialization
-process.env.FIREBASE_STORAGE_BUCKET = firebaseStorageBucket.value();
+// Use default value for initialization (param will be resolved at runtime in middleware)
+// The actual runtime value will be set in middleware below (line 78)
+process.env.APP_STORAGE_BUCKET = 'xperience-gaming.firebasestorage.app';
 
 // Initialize Firebase
 require('./src/config/firebase');
@@ -64,8 +65,97 @@ app.use((req, res, next) => {
     optionsSuccessStatus: 204
   })(req, res, next);
 });
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+
+// Body parsers - SKIP multipart/form-data AND upload routes (let busboy handle it)
+// This prevents "Unexpected end of form" errors when uploading files
+// Create parser instances once for efficiency
+const jsonParser = express.json({ limit: '10mb' });
+const urlencodedParser = express.urlencoded({ extended: true });
+// Raw body parser for upload routes - preserves raw buffer for busboy
+// Note: We use raw() without type restriction to capture all body data as buffer
+const rawParser = express.raw({ limit: '10mb' });
+
+app.use((req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  const isUploadRoute = req.path.startsWith('/upload');
+  
+  // Log request details for debugging
+  if (contentType.includes('multipart') || isUploadRoute) {
+    console.log('📸 [BODY_PARSER] Upload-related request detected:', {
+      method: req.method,
+      path: req.path,
+      contentType: contentType,
+      contentLength: req.headers['content-length'],
+      isUploadRoute: isUploadRoute,
+      bodyAlreadyParsed: !!req.body && Object.keys(req.body).length > 0,
+      readable: req.readable,
+      readableEnded: req.readableEnded,
+    });
+    
+    // WARNING: If body is already parsed, Multer won't work
+    if (req.body && Object.keys(req.body).length > 0) {
+      console.error('📸 [BODY_PARSER] ⚠️ WARNING: Body already parsed! This will break Multer.');
+    }
+  }
+  
+  // CRITICAL: For upload routes, use raw parser to preserve body buffer for busboy
+  if (isUploadRoute) {
+    console.log('📸 [BODY_PARSER] Using raw parser for upload route to preserve body buffer');
+    // Use raw parser to get body as buffer, then store it for busboy
+    return rawParser(req, res, () => {
+      // req.body will be a Buffer when using express.raw()
+      if (Buffer.isBuffer(req.body)) {
+        req.rawBody = req.body; // Store raw buffer for busboy
+        req.body = {}; // Clear to avoid confusion
+        console.log('📸 [BODY_PARSER] Raw body buffer preserved, size:', req.rawBody.length);
+      } else {
+        console.error('📸 [BODY_PARSER] ⚠️ Body is not a buffer! Type:', typeof req.body);
+        // Try to convert to buffer if it's a string
+        if (typeof req.body === 'string') {
+          req.rawBody = Buffer.from(req.body, 'binary');
+          req.body = {};
+          console.log('📸 [BODY_PARSER] Converted string to buffer, size:', req.rawBody.length);
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: 'Unable to process file upload: body format not supported'
+          });
+        }
+      }
+      next();
+    });
+  }
+  
+  // Skip body parsing for multipart/form-data - Multer will handle it
+  if (contentType.includes('multipart/form-data')) {
+    console.log('📸 [BODY_PARSER] Skipping body parsing for multipart request');
+    return next();
+  }
+  
+  // Skip parsing for GET, HEAD, OPTIONS requests (no body)
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  
+  // For JSON requests, use JSON parser
+  if (contentType.includes('application/json')) {
+    return jsonParser(req, res, next);
+  }
+  
+  // For URL-encoded requests, use URL-encoded parser
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return urlencodedParser(req, res, next);
+  }
+  
+  // For requests without explicit content-type but with body, try JSON parser
+  // (This handles cases where Content-Type header is missing but body is JSON)
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+    return jsonParser(req, res, next);
+  }
+  
+  // No body parsing needed
+  next();
+});
 
 // Set environment variables from params (for backward compatibility)
 app.use((req, res, next) => {
@@ -74,12 +164,26 @@ app.use((req, res, next) => {
   process.env.FRONTEND_URL = frontendUrl.value();
   process.env.JWT_SECRET = jwtSecret.value();
   process.env.JWT_EXPIRES_IN = jwtExpiresIn.value();
-  process.env.FIREBASE_STORAGE_BUCKET = firebaseStorageBucket.value();
+  process.env.APP_STORAGE_BUCKET = firebaseStorageBucket.value();
   process.env.PAYU_MERCHANT_KEY = payuMerchantKey.value();
   process.env.PAYU_MERCHANT_SALT = payuMerchantSalt.value();
   process.env.PAYU_MODE = payuMode.value();
   process.env.PAYU_BASE_URL = payuBaseUrl.value();
   process.env.BACKEND_URL = backendUrl.value();
+  
+  // Log PayU configuration on first request (for debugging)
+  if (!global.payuConfigLogged) {
+    console.log('💳 [PAYU_CONFIG] ========================================');
+    console.log('💳 [PAYU_CONFIG] PayU Configuration Status:');
+    console.log('💳 [PAYU_CONFIG] PAYU_MERCHANT_KEY:', payuMerchantKey.value() ? `${payuMerchantKey.value().substring(0, 4)}...` : '❌ MISSING');
+    console.log('💳 [PAYU_CONFIG] PAYU_MERCHANT_SALT:', payuMerchantSalt.value() ? '✅ SET' : '❌ MISSING');
+    console.log('💳 [PAYU_CONFIG] PAYU_BASE_URL:', payuBaseUrl.value() || '❌ MISSING');
+    console.log('💳 [PAYU_CONFIG] PAYU_MODE:', payuMode.value() || 'test (default)');
+    console.log('💳 [PAYU_CONFIG] Environment:', payuBaseUrl.value()?.includes('secure.payu.in') ? '🟢 PRODUCTION' : payuBaseUrl.value()?.includes('test.payu.in') ? '🟡 TEST' : '❓ UNKNOWN');
+    console.log('💳 [PAYU_CONFIG] ========================================');
+    global.payuConfigLogged = true;
+  }
+  
   next();
 });
 

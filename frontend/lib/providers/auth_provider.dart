@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../config/constants.dart';
 import '../core/storage.dart';
 import '../core/firebase_service.dart';
+import '../core/api_client.dart';
 import '../core/logger.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
@@ -224,25 +225,41 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Logout user
   Future<void> logout() async {
+    AppLogger.d('🔐 [AUTH_PROVIDER] ========== STARTING LOGOUT ==========');
+    AppLogger.d('🔐 [AUTH_PROVIDER] Current state - isAuthenticated: ${state.isAuthenticated}');
+    AppLogger.d('🔐 [AUTH_PROVIDER] Current state - user: ${state.user?.email ?? "null"}');
+    
     state = state.copyWith(isLoading: true);
 
     try {
       // Unregister notification token before logout
+      AppLogger.d('🔐 [AUTH_PROVIDER] Step 1: Unregistering notification token...');
       try {
         final notificationService = _ref.read(notificationServiceProvider);
         await notificationService.unregisterToken();
-        AppLogger.d('📬 [AUTH] Notification token unregistered');
+        AppLogger.d('🔐 [AUTH_PROVIDER] ✅ Step 1 Complete: Notification token unregistered');
       } catch (e) {
-        AppLogger.e('📬 [AUTH] Error unregistering notification token', e);
+        AppLogger.e('🔐 [AUTH_PROVIDER] ⚠️ Step 1 Error: Error unregistering notification token', e);
         // Don't fail logout if notification unregister fails
       }
       
+      // Call auth service logout
+      AppLogger.d('🔐 [AUTH_PROVIDER] Step 2: Calling auth service logout...');
       await _authService.logout();
-    } catch (_) {
-      // Ignore errors during logout
+      AppLogger.d('🔐 [AUTH_PROVIDER] ✅ Step 2 Complete: Auth service logout called');
+    } catch (e, stackTrace) {
+      AppLogger.e('🔐 [AUTH_PROVIDER] ⚠️ Error during logout process', e, stackTrace);
+      // Continue with storage clearing even if logout fails
     }
 
+    // Clear all storage
     await _storage.clearAll();
+    
+    // CRITICAL: Invalidate API client provider to clear token cache
+    // This ensures the next sign-in gets a fresh token, not a cached one from previous account
+    _ref.invalidate(dioProvider);
+    
+    // Update state
     state = AuthState(isLoading: false);
   }
 

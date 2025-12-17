@@ -37,6 +37,10 @@ class ImageUploadService {
       final request = http.MultipartRequest('POST', uri);
 
       // Add auth header
+      // IMPORTANT: Do NOT manually set 'Content-Type' header!
+      // http.MultipartRequest automatically sets it with the correct boundary
+      // (e.g., 'multipart/form-data; boundary=----WebKitFormBoundary...')
+      // Manually setting it would remove the boundary and cause "Unexpected end of form" errors
       request.headers['Authorization'] = 'Bearer $token';
 
       // Add image file
