@@ -114,7 +114,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         ElevatedButton.icon(
                           onPressed: () => ref
                               .read(locationProvider.notifier)
-                              .getCurrentLocation(),
+                              .getCurrentLocation(forceRequest: true),
                           icon: const Icon(Icons.my_location),
                           label: const Text('Enable Location'),
                           style: ElevatedButton.styleFrom(

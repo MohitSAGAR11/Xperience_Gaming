@@ -39,7 +39,8 @@ class LocationNotifier extends StateNotifier<LocationState> {
   LocationNotifier(this._locationService) : super(LocationState());
 
   /// Initialize and get current location
-  Future<void> getCurrentLocation() async {
+  /// [forceRequest] - If true, always request permission (shows dialog even if previously denied)
+  Future<void> getCurrentLocation({bool forceRequest = false}) async {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
@@ -54,8 +55,28 @@ class LocationNotifier extends StateNotifier<LocationState> {
         return;
       }
 
-      // Check permissions
-      final permission = await _locationService.checkPermission();
+      // Check or request permissions
+      LocationPermission permission;
+      if (forceRequest) {
+        // Force request permission - always try to request, even if previously denied
+        // This will show dialog if possible, or return deniedForever if Android won't show it
+        permission = await _locationService.requestPermission();
+        
+        // If permission is denied forever after request, automatically open app settings
+        if (permission == LocationPermission.deniedForever) {
+          // Open app settings so user can enable permission manually
+          await _locationService.openAppSettings();
+          state = state.copyWith(
+            isLoading: false,
+            hasPermission: false,
+            error: 'Location permission permanently denied. Please enable it in app settings (opened for you).',
+          );
+          return;
+        }
+      } else {
+        // Normal check (only requests if denied)
+        permission = await _locationService.checkPermission();
+      }
       
       if (permission == LocationPermission.denied) {
         state = state.copyWith(

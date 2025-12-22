@@ -10,7 +10,6 @@ import '../../../providers/location_provider.dart';
 import '../../../providers/cafe_provider.dart';
 import '../../../widgets/cafe_card.dart';
 import '../../../widgets/loading_widget.dart';
-import '../../../widgets/input_field.dart';
 
 /// Client Home Screen
 class ClientHomeScreen extends ConsumerStatefulWidget {
@@ -127,7 +126,7 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
                 SliverToBoxAdapter(
                   child: _LocationErrorBanner(
                     message: locationState.error!,
-                    onRetry: () => ref.read(locationProvider.notifier).getCurrentLocation(),
+                    onRetry: () => ref.read(locationProvider.notifier).getCurrentLocation(forceRequest: true),
                     onSettings: () => ref.read(locationProvider.notifier).openSettings(),
                   ),
                 ),
@@ -175,7 +174,7 @@ class _ClientHomeScreenState extends ConsumerState<ClientHomeScreen> {
                             ? ElevatedButton(
                                 onPressed: () => ref
                                     .read(locationProvider.notifier)
-                                    .getCurrentLocation(),
+                                    .getCurrentLocation(forceRequest: true),
                                 child: const Text('Enable Location'),
                               )
                             : null,

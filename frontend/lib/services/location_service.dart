@@ -19,6 +19,13 @@ class LocationService {
     return permission;
   }
 
+  /// Force request location permission (always shows dialog)
+  /// Use this when user explicitly clicks "Enable Location" button
+  Future<LocationPermission> requestPermission() async {
+    // Always request permission, even if previously denied
+    return await Geolocator.requestPermission();
+  }
+
   /// Get current position
   Future<Position?> getCurrentPosition() async {
     try {

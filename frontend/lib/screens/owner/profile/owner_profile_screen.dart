@@ -101,8 +101,7 @@ class OwnerProfileScreen extends ConsumerWidget {
               icon: Icons.feedback_outlined,
               title: 'Feedback',
               onTap: () async {
-                // Placeholder Google Form link - replace with actual form URL
-                const feedbackUrl = 'https://docs.google.com/forms/d/e/YOUR_FORM_ID/viewform';
+                const feedbackUrl = 'https://forms.gle/fUGQP9TNX3tNX5SZ8';
                 final uri = Uri.parse(feedbackUrl);
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri, mode: LaunchMode.externalApplication);
