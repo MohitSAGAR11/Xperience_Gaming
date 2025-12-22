@@ -3,13 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import 'config/theme.dart';
 import 'config/routes.dart';
 import 'core/storage.dart';
 import 'core/firebase_service.dart';
 import 'services/notification_service.dart';
+import 'services/background_refresh_service.dart';
+import 'providers/auth_provider.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -47,9 +48,63 @@ void main() async {
         // Override shared preferences provider with actual instance
         sharedPrefsProvider.overrideWithValue(prefs),
       ],
-      child: const XperienceGamingApp(),
+      child: const AppLifecycleManager(
+        child: XperienceGamingApp(),
+      ),
     ),
   );
+}
+
+/// App Lifecycle Manager - Pauses/resumes background refresh based on app state
+class AppLifecycleManager extends ConsumerStatefulWidget {
+  final Widget child;
+  
+  const AppLifecycleManager({super.key, required this.child});
+  
+  @override
+  ConsumerState<AppLifecycleManager> createState() => _AppLifecycleManagerState();
+}
+
+class _AppLifecycleManagerState extends ConsumerState<AppLifecycleManager> 
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+  
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final refreshService = ref.read(backgroundRefreshServiceProvider);
+    
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App came to foreground - resume refresh
+        if (ref.read(isAuthenticatedProvider)) {
+          refreshService.start();
+        }
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        // App went to background - pause refresh to save battery
+        refreshService.stop();
+        break;
+      case AppLifecycleState.hidden:
+        break;
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
+  }
 }
 
 /// Main App Widget
@@ -59,6 +114,9 @@ class XperienceGamingApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    
+    // Initialize background refresh service (starts automatically when authenticated)
+    ref.watch(backgroundRefreshServiceProvider);
 
     return MaterialApp.router(
       title: 'XPerience Gaming',

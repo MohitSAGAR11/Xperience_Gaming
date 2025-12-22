@@ -329,9 +329,15 @@ class AuthService {
       final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
       AppLogger.d('🔐 [GOOGLE_SIGNIN] Is new user: $isNewUser');
       
-      // Wait for token to settle
+      // Wait for token to settle, then try to refresh (non-blocking if it fails)
       await Future.delayed(const Duration(milliseconds: 500));
-      await FirebaseService.refreshToken();
+      try {
+        await FirebaseService.refreshToken();
+      } catch (e) {
+        // Token refresh failed, but continue with sign-in
+        // Firebase usually provides a token automatically after sign-in
+        AppLogger.w('🔐 [GOOGLE_SIGNIN] Token refresh failed, but continuing sign-in: $e');
+      }
       
       // Send Google Sign-In data to backend
       AppLogger.d('🔐 [GOOGLE_SIGNIN] Sending to backend...');

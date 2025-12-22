@@ -59,16 +59,35 @@ class _EarningsAnalyticsScreenState extends State<EarningsAnalyticsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to dashboard
+          if (!context.canPop()) {
+            context.go(Routes.ownerDashboard);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
         backgroundColor: AppColors.trueBlack,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+        appBar: AppBar(
+          backgroundColor: AppColors.trueBlack,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // If no parent screen, redirect to dashboard
+              if (!context.canPop()) {
+                context.go(Routes.ownerDashboard);
+              } else {
+                context.pop();
+              }
+            },
+          ),
+          title: const Text('Earnings & Analytics'),
         ),
-        title: const Text('Earnings & Analytics'),
-      ),
       body: AnimatedBuilder(
         animation: _animationController,
         builder: (context, child) {
@@ -288,6 +307,7 @@ class _EarningsAnalyticsScreenState extends State<EarningsAnalyticsScreen>
             ),
           );
         },
+      ),
       ),
     );
   }

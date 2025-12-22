@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/routes.dart';
 import '../../../core/utils.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../widgets/custom_button.dart';
@@ -75,16 +77,35 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to dashboard
+          if (!context.canPop()) {
+            context.go(Routes.ownerDashboard);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
         backgroundColor: AppColors.trueBlack,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+        appBar: AppBar(
+          backgroundColor: AppColors.trueBlack,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // If no parent screen, redirect to dashboard
+              if (!context.canPop()) {
+                context.go(Routes.ownerDashboard);
+              } else {
+                context.pop();
+              }
+            },
+          ),
+          title: const Text('Edit Profile'),
         ),
-        title: const Text('Edit Profile'),
-      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
@@ -195,6 +216,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/routes.dart';
 import '../../../config/constants.dart';
 import '../../../core/utils.dart';
 import '../../../core/logger.dart';
@@ -15,7 +16,7 @@ import '../../../services/payment_service.dart';
 import '../../../models/booking_model.dart';
 import '../../../widgets/custom_button.dart';
 import '../../../widgets/loading_widget.dart';
-import '../payment/payment_screen_webview.dart';
+import '../payment/payment_screen_sdk.dart';
 import 'booking_confirmation_screen.dart';
 
 /// Slot Selection Screen with Real-Time Availability
@@ -28,7 +29,8 @@ class SlotSelectionScreen extends ConsumerStatefulWidget {
   ConsumerState<SlotSelectionScreen> createState() => _SlotSelectionScreenState();
 }
 
-class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
+class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> 
+    with SingleTickerProviderStateMixin {
   String _stationType = AppConstants.stationTypePc;
   DateTime _selectedDate = DateTime.now();
   String? _startTime;
@@ -40,13 +42,41 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   CafeAvailability? _availability;
   int _availableCount = 0;
   int? _selectedStation;
+  int _numberOfPcs = 1; // Number of PCs to book (for group bookings)
   
   // Dynamic time slots based on cafe hours
   List<String> _timeSlots = [];
+  
+  // Animation controller for availability display
+  late AnimationController _availabilityAnimationController;
+  late Animation<double> _availabilityFadeAnimation;
+  late Animation<double> _availabilityScaleAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animation controller
+    _availabilityAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    
+    _availabilityFadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _availabilityAnimationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    _availabilityScaleAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _availabilityAnimationController,
+      curve: Curves.elasticOut,
+    ));
     
     // Dismiss keyboard immediately when entering this screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,6 +90,11 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         _generateTimeSlots(cafe.openingTime, cafe.closingTime);
       }
       _loadAvailability();
+      
+      // Start animation if availability is already set
+      if (_availableCount > 0) {
+        _availabilityAnimationController.forward();
+      }
     });
   }
 
@@ -189,6 +224,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   }
 
   /// Check if a time slot is in the past (only for today's date)
+  /// Handles cafes that operate past midnight (e.g., 9 AM to 1 AM next day)
   bool _isTimeSlotInPast(String time) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -212,6 +248,50 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     final slotMinute = int.tryParse(timeParts[1]) ?? 0;
     final slotTime = DateTime(now.year, now.month, now.day, slotHour, slotMinute);
     
+    // If cafe availability is loaded, check for midnight crossing
+    if (_availability != null) {
+      final openMins = _timeToMinutes(_availability!.openingTime);
+      final closeMins = _timeToMinutes(_availability!.closingTime);
+      final slotMins = _timeToMinutes(time);
+      final currentMins = now.hour * 60 + now.minute;
+      
+      // Check if cafe crosses midnight (closing time < opening time)
+      final crossesMidnight = closeMins < openMins;
+      
+      if (crossesMidnight) {
+        // Cafe operates past midnight (e.g., 10:00 to 05:00 next day)
+        // If slot is after midnight (slot time < opening time), it's part of the next day's operation
+        if (slotMins < openMins) {
+          // Slot is after midnight (e.g., 00:00, 00:30, 05:00)
+          // These slots are for the NEXT DAY, so they should be available if:
+          // 1. Current time is before midnight (currentMins >= openMins), OR
+          // 2. Current time is after midnight but hasn't passed the closing time yet
+          // 
+          // Example: Cafe 10:00-05:00, Current time 4:30 PM (990 mins)
+          // - Slot 0:00 (0 mins) is for tomorrow, should be available
+          // - Slot 0:00 is unavailable only if current time is after midnight AND past closing time
+          
+          // If current time is still before midnight (current time >= opening time)
+          // then slots after midnight are for tomorrow and should be available
+          if (currentMins >= openMins) {
+            // Current time is before midnight, so slots after midnight are for tomorrow
+            return false; // Available (for tomorrow)
+          } else {
+            // Current time is after midnight (e.g., 1:00 AM = 60 mins)
+            // Slots after midnight are in the past only if current time has passed closing time
+            // Example: closing is 05:00 (300 mins), current is 06:00 (360 mins)
+            // Then 00:00-05:00 slots are in the past
+            return currentMins > closeMins;
+          }
+        } else {
+          // Slot is before midnight (e.g., 10:00 to 23:30)
+          // Normal comparison: slot is past if it's before current time
+          return slotTime.isBefore(now.subtract(const Duration(minutes: 1)));
+        }
+      }
+    }
+    
+    // Normal case: cafe doesn't cross midnight, or availability not loaded yet
     // Slot is in the past if it's before current time (with 1 minute buffer for rounding)
     return slotTime.isBefore(now.subtract(const Duration(minutes: 1)));
   }
@@ -383,7 +463,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       return;
     }
 
-    AppLogger.d('📅 [SLOT_SELECTION] Checking availability for: cafeId=${widget.cafeId}, stationType=$_stationType, bookingDate=${DateTimeUtils.formatDateForApi(_selectedDate)}, startTime=$_startTime, endTime=$_endTime');
+    AppLogger.d('📅 [SLOT_SELECTION] Checking availability for: cafeId=${widget.cafeId}, stationType=$_stationType, numberOfPcs=$_numberOfPcs, bookingDate=${DateTimeUtils.formatDateForApi(_selectedDate)}, startTime=$_startTime, endTime=$_endTime');
 
     if (mounted) {
       setState(() => _isLoadingAvailability = true);
@@ -404,25 +484,72 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       );
 
       AppLogger.d('📅 [SLOT_SELECTION] Availability response received');
+      AppLogger.d('📅 [SLOT_SELECTION] Available stations: ${response.availableStations}');
       AppLogger.d('📅 [SLOT_SELECTION] Available count: ${response.availableCount}');
       AppLogger.d('📅 [SLOT_SELECTION] First available: ${response.firstAvailable}');
       AppLogger.d('📅 [SLOT_SELECTION] Total stations: ${response.totalStations}');
 
+      // Check if we have enough consecutive stations for the requested number of PCs
+      int availableConsecutiveCount = 0;
+      int? firstConsecutiveStation;
+      
+      if (_numberOfPcs > 1 && response.availableStations.isNotEmpty) {
+        // Find consecutive stations starting from the first available
+        final sortedStations = List<int>.from(response.availableStations)..sort();
+        
+        for (int i = 0; i <= sortedStations.length - _numberOfPcs; i++) {
+          bool isConsecutive = true;
+          for (int j = 1; j < _numberOfPcs; j++) {
+            if (sortedStations[i + j] != sortedStations[i] + j) {
+              isConsecutive = false;
+              break;
+            }
+          }
+          if (isConsecutive) {
+            firstConsecutiveStation = sortedStations[i];
+            availableConsecutiveCount = response.availableCount; // All stations are available
+            break;
+          }
+        }
+      } else {
+        // Single PC or no consecutive requirement
+        availableConsecutiveCount = response.availableCount;
+        firstConsecutiveStation = response.firstAvailable;
+      }
+
+      AppLogger.d('📅 [SLOT_SELECTION] After consecutive check:');
+      AppLogger.d('📅 [SLOT_SELECTION] - Available consecutive count: $availableConsecutiveCount');
+      AppLogger.d('📅 [SLOT_SELECTION] - First consecutive station: $firstConsecutiveStation');
+
       if (mounted) {
+        final previousCount = _availableCount;
         setState(() {
-          _availableCount = response.availableCount;
-          _selectedStation = response.firstAvailable;
+          _availableCount = _numberOfPcs > 1 
+            ? (availableConsecutiveCount >= _numberOfPcs ? availableConsecutiveCount : 0)
+            : response.availableCount;
+          _selectedStation = firstConsecutiveStation ?? response.firstAvailable;
           _isLoadingAvailability = false;
         });
+        // Trigger animation if availability changed
+        if (previousCount != _availableCount) {
+          _availabilityAnimationController.reset();
+          _availabilityAnimationController.forward();
+        }
       }
     } catch (e) {
       AppLogger.e('📅 [SLOT_SELECTION] Error fetching available stations', e);
       if (mounted) {
+        final previousCount = _availableCount;
         setState(() {
           _availableCount = 0;
           _selectedStation = null;
           _isLoadingAvailability = false;
         });
+        // Trigger animation if availability changed
+        if (previousCount != _availableCount) {
+          _availabilityAnimationController.reset();
+          _availabilityAnimationController.forward();
+        }
         // Show error to user
         SnackbarUtils.showError(context, 'Unable to check availability. Please try again.');
       }
@@ -443,11 +570,21 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
       AppLogger.w('📅 [SLOT_SELECTION] ERROR: No stations available');
       AppLogger.w('📅 [SLOT_SELECTION] Selected station: $_selectedStation');
       AppLogger.w('📅 [SLOT_SELECTION] Available count: $_availableCount');
-      SnackbarUtils.showError(context, 'No stations available for this time slot');
+      AppLogger.w('📅 [SLOT_SELECTION] Number of PCs requested: $_numberOfPcs');
+      SnackbarUtils.showError(context, _numberOfPcs > 1 
+        ? 'Not enough consecutive stations available for $_numberOfPcs PCs'
+        : 'No stations available for this time slot');
       return;
     }
 
-    AppLogger.d('📅 [SLOT_SELECTION] Booking details: cafeId=${widget.cafeId}, stationType=$_stationType, stationNumber=$_selectedStation, bookingDate=${DateTimeUtils.formatDateForApi(_selectedDate)}, startTime=$_startTime, endTime=$_endTime');
+    // Check if we have enough stations for the requested number of PCs
+    if (_numberOfPcs > 1 && _availableCount < _numberOfPcs) {
+      AppLogger.w('📅 [SLOT_SELECTION] ERROR: Not enough consecutive stations');
+      SnackbarUtils.showError(context, 'Not enough consecutive stations available. Only $_availableCount available, but $_numberOfPcs requested.');
+      return;
+    }
+
+    AppLogger.d('📅 [SLOT_SELECTION] Booking details: cafeId=${widget.cafeId}, stationType=$_stationType, stationNumber=$_selectedStation, numberOfPcs=$_numberOfPcs, bookingDate=${DateTimeUtils.formatDateForApi(_selectedDate)}, startTime=$_startTime, endTime=$_endTime');
 
     // Dismiss keyboard before API call
     FocusScope.of(context).unfocus();
@@ -467,6 +604,7 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
           stationType: _stationType,
           consoleType: null,
           stationNumber: _selectedStation!,
+          numberOfPcs: _numberOfPcs,
           bookingDate: DateTimeUtils.formatDateForApi(_selectedDate),
           startTime: _startTime!,
           endTime: _endTime!,
@@ -488,11 +626,12 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         AppLogger.d('📅 [SLOT_SELECTION] Navigating to payment screen...');
         
         // Navigate to payment screen and await result
+        // Using official Cashfree SDK - SDK manages WebView internally
         if (mounted) {
           final paymentResult = await Navigator.push<dynamic>(
             context,
             MaterialPageRoute(
-              builder: (context) => PaymentScreenWebView(
+              builder: (context) => PaymentScreenSDK(
                 bookingId: response.booking!.id,
                 amount: response.booking!.totalAmount,
                 firstName: response.booking!.user?.name,
@@ -535,18 +674,32 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                 }
               }
               
-              // Fetch updated booking and show confirmation
+              // Fetch updated booking with group bookings and show confirmation
               AppLogger.d('📅 [SLOT_SELECTION] Fetching updated booking...');
               try {
-                final updatedBooking = await bookingService.getBookingById(response.booking!.id);
-                AppLogger.d('📅 [SLOT_SELECTION] Updated booking fetched: ${updatedBooking != null}');
-                if (updatedBooking != null && mounted) {
+                // Always fetch fresh data from API to ensure we have all group bookings
+                final bookingWithGroup = await bookingService.getBookingWithGroup(response.booking!.id);
+                AppLogger.d('📅 [SLOT_SELECTION] Updated booking fetched: ${bookingWithGroup != null}');
+                AppLogger.d('📅 [SLOT_SELECTION] Group bookings count: ${bookingWithGroup?.groupBookings?.length ?? 0}');
+                
+                if (bookingWithGroup != null && mounted) {
                   AppLogger.d('📅 [SLOT_SELECTION] Navigating to confirmation screen...');
+                  final Map<String, dynamic> bookingData = {
+                    'booking': bookingWithGroup.booking.toJson(),
+                  };
+                  if (bookingWithGroup.groupBookings != null && bookingWithGroup.groupBookings!.isNotEmpty) {
+                    AppLogger.d('📅 [SLOT_SELECTION] Adding ${bookingWithGroup.groupBookings!.length} group bookings to confirmation data');
+                    bookingData['groupBookings'] = bookingWithGroup.groupBookings!
+                        .map((b) => b.toJson())
+                        .toList();
+                  } else {
+                    AppLogger.w('📅 [SLOT_SELECTION] No group bookings found, but groupBookingId exists: ${bookingWithGroup.booking.groupBookingId}');
+                  }
                   Navigator.pushReplacement(
                     context,
                     MaterialPageRoute(
                       builder: (context) => BookingConfirmationScreen(
-                        bookingData: {'booking': updatedBooking.toJson()},
+                        bookingData: bookingData,
                       ),
                     ),
                   );
@@ -637,7 +790,8 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
     
     // Calculate exact amount with decimal precision (no rounding)
     // Example: 1.5 hours * 100/hr = 150.0 (not 200)
-    final totalAmount = (hourlyRate * durationHours);
+    // Multiply by number of PCs for group bookings
+    final totalAmount = (hourlyRate * durationHours) * _numberOfPcs;
 
     // Check if booking is within 1 hour (for refund warning)
     final bookingDateTime = DateTime(
@@ -734,8 +888,10 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                   const Divider(color: AppColors.surfaceDark, height: 24),
                   _ConfirmationRow(
                     icon: Icons.computer,
-                    label: 'Station',
-                    value: 'PC #$_selectedStation',
+                    label: _numberOfPcs > 1 ? 'Stations' : 'Station',
+                    value: _numberOfPcs > 1
+                        ? 'PC #$_selectedStation - #${_selectedStation! + _numberOfPcs - 1} ($_numberOfPcs PCs)'
+                        : 'PC #$_selectedStation',
                   ),
                   const Divider(color: AppColors.surfaceDark, height: 24),
                   _ConfirmationRow(
@@ -851,23 +1007,50 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
             const SizedBox(height: 24),
 
             // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: CyberOutlineButton(
-                    text: 'Cancel',
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: GlowButton(
-                    text: 'PROCEED TO PAYMENT',
-                    onPressed: () => Navigator.of(context).pop(true),
-                  ),
-                ),
-              ],
+            // Use Column for better overflow handling on smaller screens
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Stack vertically on very small screens, horizontally on larger screens
+                if (constraints.maxWidth < 300) {
+                  return Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: GlowButton(
+                          text: 'Pay Now',
+                          onPressed: () => Navigator.of(context).pop(true),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: CyberOutlineButton(
+                          text: 'Cancel',
+                          onPressed: () => Navigator.of(context).pop(false),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                // Horizontal layout for larger screens
+                return Row(
+                  children: [
+                    Expanded(
+                      child: CyberOutlineButton(
+                        text: 'Cancel',
+                        onPressed: () => Navigator.of(context).pop(false),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GlowButton(
+                        text: 'Pay Now',
+                        onPressed: () => Navigator.of(context).pop(true),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
             ],
@@ -886,21 +1069,40 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
   Widget build(BuildContext context) {
     final cafeAsync = ref.watch(cafeProvider(widget.cafeId));
 
-    return GestureDetector(
-      // Dismiss keyboard when tapping outside
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Scaffold(
-        backgroundColor: AppColors.trueBlack,
-        appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // Ensure keyboard is dismissed before navigation
+          FocusScope.of(context).unfocus();
+          // If no parent screen, redirect to home
+          if (!context.canPop()) {
+            context.go(Routes.clientHome);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: GestureDetector(
+        // Dismiss keyboard when tapping outside
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Scaffold(
           backgroundColor: AppColors.trueBlack,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              // Ensure keyboard is dismissed before navigation
-              FocusScope.of(context).unfocus();
-              Navigator.of(context).pop();
-            },
-          ),
+          appBar: AppBar(
+            backgroundColor: AppColors.trueBlack,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () {
+                // Ensure keyboard is dismissed before navigation
+                FocusScope.of(context).unfocus();
+                // If no parent screen, redirect to home
+                if (!context.canPop()) {
+                  context.go(Routes.clientHome);
+                } else {
+                  context.pop();
+                }
+              },
+            ),
           title: const Text('Select Slot'),
         ),
         body: cafeAsync.when(
@@ -938,34 +1140,310 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Station Type Selection
-                const Text(
-                  'What do you want to play?',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                // PC Stations Display - Full Width
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.cyberCyan.withOpacity(0.15),
+                        AppColors.neonPurple.withOpacity(0.1),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.cyberCyan.withOpacity(0.4),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.cyberCyan.withOpacity(0.2),
+                        blurRadius: 12,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.cyberCyan.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.computer,
+                          color: AppColors.cyberCyan,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'PC Stations',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${cafe.totalPcStations} ${cafe.totalPcStations == 1 ? 'station' : 'stations'} available',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                _TypeCard(
-                  icon: Icons.computer,
-                  title: 'PC',
-                  subtitle: '${cafe.totalPcStations} stations',
-                  isSelected: _stationType == AppConstants.stationTypePc,
-                  onTap: () {
-                    setState(() {
-                      _stationType = AppConstants.stationTypePc;
-                      _availableCount = 0;
-                      _selectedStation = null;
-                    });
-                    // Call async function AFTER setState
-                    if (_startTime != null && _endTime != null) {
-                      _updateAvailableCount();
-                    }
-                  },
-                ),
                 const SizedBox(height: 24),
+
+                // Number of PCs Selection - Redesigned
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.cyberCyan.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.groups,
+                          color: AppColors.cyberCyan,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'How many PCs?',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardDark,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.cyberCyan.withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.cyberCyan.withOpacity(0.1),
+                          blurRadius: 8,
+                          spreadRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.cyberCyan.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.computer,
+                                      color: AppColors.cyberCyan,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Number of PCs',
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '$_numberOfPcs PC${_numberOfPcs > 1 ? 's' : ''}',
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Counter Controls
+                            Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceDark,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.cyberCyan.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: _numberOfPcs > 1
+                                          ? () {
+                                              setState(() {
+                                                _numberOfPcs--;
+                                                _availableCount = 0;
+                                                _selectedStation = null;
+                                              });
+                                              if (_startTime != null && _endTime != null) {
+                                                _updateAvailableCount();
+                                              }
+                                            }
+                                          : null,
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(12),
+                                        bottomLeft: Radius.circular(12),
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        child: Icon(
+                                          Icons.remove,
+                                          color: _numberOfPcs > 1
+                                              ? AppColors.cyberCyan
+                                              : AppColors.textMuted,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: 60,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      border: Border.symmetric(
+                                        vertical: BorderSide(
+                                          color: AppColors.cyberCyan.withOpacity(0.3),
+                                        ),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '$_numberOfPcs',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: AppColors.cyberCyan,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: _numberOfPcs < 20 &&
+                                              _numberOfPcs < (cafe.totalPcStations ?? 1)
+                                          ? () {
+                                              setState(() {
+                                                _numberOfPcs++;
+                                                _availableCount = 0;
+                                                _selectedStation = null;
+                                              });
+                                              if (_startTime != null && _endTime != null) {
+                                                _updateAvailableCount();
+                                              }
+                                            }
+                                          : null,
+                                      borderRadius: const BorderRadius.only(
+                                        topRight: Radius.circular(12),
+                                        bottomRight: Radius.circular(12),
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        child: Icon(
+                                          Icons.add,
+                                          color: _numberOfPcs < 20 &&
+                                                  _numberOfPcs < (cafe.totalPcStations ?? 1)
+                                              ? AppColors.cyberCyan
+                                              : AppColors.textMuted,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_numberOfPcs > 1) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.cyberCyan.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppColors.cyberCyan.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: AppColors.cyberCyan,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Consecutive PCs will be booked together',
+                                    style: TextStyle(
+                                      color: AppColors.cyberCyan.withOpacity(0.9),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
 
                 // Date Selection
                 const Text(
@@ -1082,93 +1560,215 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
                 ),
                 const SizedBox(height: 12),
                 
-                // Selected Time and Availability Display
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _availableCount > 0 
-                          ? AppColors.success.withOpacity(0.5)
-                          : _startTime != null && _endTime != null
-                              ? AppColors.error.withOpacity(0.5)
-                              : AppColors.cardDark,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Time: ${_startTime ?? '--:--'} - ${_endTime ?? '--:--'}',
-                              style: const TextStyle(
-                                color: AppColors.cyberCyan,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 16,
-                              ),
-                            ),
-                            if (_startTime != null && _endTime != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                _availableCount > 0
-                                    ? '$_availableCount PC${_availableCount > 1 ? 's' : ''} available'
-                                    : 'No availability for this time',
-                                style: TextStyle(
-                                  color: _availableCount > 0 
-                                      ? AppColors.success 
-                                      : AppColors.error,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ] else if (_startTime != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                'Now select end time',
-                                style: TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (_availableCount > 0 && _selectedStation != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
+                // Selected Time and Availability Display - Redesigned with animations
+                AnimatedBuilder(
+                  animation: _availabilityAnimationController,
+                  builder: (context, child) {
+                    final isAvailable = _availableCount >= _numberOfPcs;
+                    final hasTimeSelected = _startTime != null && _endTime != null;
+                    
+                    return FadeTransition(
+                      opacity: _availabilityFadeAnimation,
+                      child: ScaleTransition(
+                        scale: _availabilityScaleAnimation,
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: AppColors.success.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
+                            color: AppColors.surfaceDark,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isAvailable && hasTimeSelected
+                                  ? AppColors.cyberCyan.withOpacity(0.6)
+                                  : hasTimeSelected
+                                      ? AppColors.error.withOpacity(0.6)
+                                      : AppColors.cardDark,
+                              width: 2,
+                            ),
+                            boxShadow: isAvailable && hasTimeSelected
+                                ? [
+                                    BoxShadow(
+                                      color: AppColors.cyberCyan.withOpacity(0.3),
+                                      blurRadius: 12,
+                                      spreadRadius: 0,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ]
+                                : null,
                           ),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                _stationType == 'pc' ? 'PC' : 'Unit',
-                                style: TextStyle(
-                                  color: AppColors.success.withOpacity(0.8),
-                                  fontSize: 10,
-                                ),
+                              // Time Display
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.cyberCyan.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.access_time,
+                                      color: AppColors.cyberCyan,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Time: ${_startTime ?? '--:--'} - ${_endTime ?? '--:--'}',
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                '#$_selectedStation',
-                                style: const TextStyle(
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                              if (_startTime != null && _endTime != null) ...[
+                                const SizedBox(height: 16),
+                                // Availability Status
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: isAvailable
+                                            ? AppColors.cyberCyan.withOpacity(0.2)
+                                            : AppColors.error.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isAvailable
+                                              ? AppColors.cyberCyan.withOpacity(0.5)
+                                              : AppColors.error.withOpacity(0.5),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        isAvailable ? Icons.check_circle : Icons.cancel,
+                                        color: isAvailable ? AppColors.cyberCyan : AppColors.error,
+                                        size: 24,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isAvailable
+                                                ? (_numberOfPcs > 1 
+                                                    ? '$_numberOfPcs Consecutive PCs Available'
+                                                    : '$_availableCount PC${_availableCount > 1 ? 's' : ''} Available')
+                                                : (_numberOfPcs > 1
+                                                    ? 'Not Enough Consecutive PCs'
+                                                    : 'No Availability'),
+                                            style: TextStyle(
+                                              color: isAvailable 
+                                                  ? AppColors.cyberCyan 
+                                                  : AppColors.error,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          if (isAvailable && _selectedStation != null) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _numberOfPcs > 1
+                                                  ? 'PC $_selectedStation - ${_selectedStation! + _numberOfPcs - 1}'
+                                                  : 'PC $_selectedStation',
+                                              style: TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ] else if (!isAvailable && _numberOfPcs > 1) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Need $_numberOfPcs, only $_availableCount available',
+                                              style: TextStyle(
+                                                color: AppColors.error.withOpacity(0.8),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    if (isAvailable && _selectedStation != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.cyberCyan.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: AppColors.cyberCyan,
+                                            width: 1.5,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: AppColors.cyberCyan.withOpacity(0.3),
+                                              blurRadius: 8,
+                                              spreadRadius: 0,
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Text(
+                                              _numberOfPcs > 1 ? 'PCs' : 'PC',
+                                              style: TextStyle(
+                                                color: AppColors.cyberCyan.withOpacity(0.8),
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            Text(
+                                              _numberOfPcs > 1 
+                                                  ? '$_selectedStation-${_selectedStation! + _numberOfPcs - 1}'
+                                                  : '$_selectedStation',
+                                              style: TextStyle(
+                                                color: AppColors.cyberCyan,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                              ),
+                              ] else if (_startTime != null) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.arrow_forward,
+                                      color: AppColors.textMuted,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Select end time',
+                                      style: TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 14,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 16),
                 
@@ -1427,20 +2027,31 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen> {
         ),
         child: SafeArea(
           child: GlowButton(
-            text: _availableCount > 0 
-                ? 'BOOK NOW ($_availableCount available)'
+            text: _availableCount >= _numberOfPcs
+                ? (_numberOfPcs > 1 
+                    ? 'BOOK $_numberOfPcs PCs NOW'
+                    : 'BOOK NOW ($_availableCount available)')
                 : _startTime != null && _endTime != null
-                    ? 'NO AVAILABILITY'
+                    ? (_numberOfPcs > 1
+                        ? 'NOT ENOUGH PCs AVAILABLE'
+                        : 'NO AVAILABILITY')
                     : 'SELECT TIME SLOT',
             isLoading: _isLoading,
-            onPressed: _startTime != null && _endTime != null && _availableCount > 0 && _meetsMinimumDuration()
+            onPressed: _startTime != null && _endTime != null && _availableCount >= _numberOfPcs && _meetsMinimumDuration()
                 ? _showBookingConfirmation
                 : null,
           ),
         ),
       ),
+        ),
       ),
     );
+  }
+  
+  @override
+  void dispose() {
+    _availabilityAnimationController.dispose();
+    super.dispose();
   }
 }
 

@@ -54,9 +54,10 @@ dependencies:
   image: ^4.1.3
   flutter_local_notifications: ^17.0.0
   logger: ^2.0.2
+  webview_flutter: ^4.4.2
   
-  # Payment - WebView for Cashfree Integration
-  webview_flutter: ^4.5.0  # WebView for payment gateway
+  # Payment - Official Cashfree Flutter SDK
+  flutter_cashfree_pg_sdk: ^2.2.9+47  # Official Cashfree Payment Gateway SDK
 
   cupertino_icons: ^1.0.6
 
@@ -80,7 +81,7 @@ flutter:
 # App Icon Configuration
 flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: "assets/icons/app_icon.png"
   # Adaptive icon for Android 8.0+ (uses the same image with background color)
   adaptive_icon_background: "#1A1A2E"  # Your app's dark background color

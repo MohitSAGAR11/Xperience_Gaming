@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/routes.dart';
 
 /// Help & Support Screen
 class HelpSupportScreen extends StatelessWidget {
@@ -10,24 +12,43 @@ class HelpSupportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
-        backgroundColor: AppColors.surfaceDark,
-        elevation: 0,
-        title: const Text(
-          'Help & Support',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to home
+          if (!context.canPop()) {
+            context.go(Routes.clientHome);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.trueBlack,
+        appBar: AppBar(
+          backgroundColor: AppColors.surfaceDark,
+          elevation: 0,
+          title: const Text(
+            'Help & Support',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+            onPressed: () {
+              // If no parent screen, redirect to home
+              if (!context.canPop()) {
+                context.go(Routes.clientHome);
+              } else {
+                context.pop();
+              }
+            },
           ),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -139,6 +160,7 @@ class HelpSupportScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

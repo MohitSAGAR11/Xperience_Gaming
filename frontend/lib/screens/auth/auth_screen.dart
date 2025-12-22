@@ -140,9 +140,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         
                         const SizedBox(height: 20),
                         
-                        // Customer Option
+                        // Gamer Option
                         _RoleOption(
-                          title: 'Customer',
+                          title: 'Gamer',
                           description: 'Browse and book gaming cafes',
                           value: AppConstants.roleClient,
                           groupValue: _selectedRole,

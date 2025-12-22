@@ -155,6 +155,34 @@ class BookingService {
     return null;
   }
 
+  /// Get single booking by ID with group bookings (if applicable)
+  Future<BookingWithGroupResponse?> getBookingWithGroup(String id) async {
+    final response = await _apiClient.get<Map<String, dynamic>>(
+      '${ApiConstants.bookings}/$id',
+    );
+
+    if (response.isSuccess && response.data != null) {
+      final data = response.data!;
+      if (data['success'] == true && data['data']?['booking'] != null) {
+        final booking = Booking.fromJson(data['data']['booking']);
+        List<Booking>? groupBookings;
+        
+        if (data['data']?['groupBookings'] != null) {
+          groupBookings = (data['data']['groupBookings'] as List)
+              .map((b) => Booking.fromJson(b))
+              .toList();
+        }
+        
+        return BookingWithGroupResponse(
+          booking: booking,
+          groupBookings: groupBookings,
+        );
+      }
+    }
+
+    return null;
+  }
+
   /// Cancel a booking
   Future<BookingResponse> cancelBooking(String bookingId) async {
     final response = await _apiClient.put<Map<String, dynamic>>(
@@ -276,6 +304,17 @@ class PaginationInfo {
       limit: json['limit'] ?? 10,
     );
   }
+}
+
+/// Booking with Group Response
+class BookingWithGroupResponse {
+  final Booking booking;
+  final List<Booking>? groupBookings;
+
+  BookingWithGroupResponse({
+    required this.booking,
+    this.groupBookings,
+  });
 }
 
 /// Booking Service Provider

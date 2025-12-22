@@ -29,10 +29,21 @@ const firebaseStorageBucket = defineString('APP_STORAGE_BUCKET', {
 const cashfreeClientId = defineString('CASHFREE_CLIENT_ID');
 const cashfreeClientSecret = defineSecret('CASHFREE_CLIENT_SECRET');
 const cashfreeApiVersion = defineString('CASHFREE_API_VERSION', { default: '2023-08-01' });
-const cashfreeBaseUrl = defineString('CASHFREE_BASE_URL', { default: 'https://sandbox.cashfree.com' });
+const cashfreeBaseUrl = defineString('CASHFREE_BASE_URL', { default: 'https://api.cashfree.com' });
 const backendUrl = defineString('BACKEND_URL', {
   default: 'https://asia-south1-xperience-gaming.cloudfunctions.net/api'
 });
+
+// Log parameter definitions on module load (for debugging)
+console.log('🔧 [PARAMS_INIT] ========================================');
+console.log('🔧 [PARAMS_INIT] Firebase Functions Parameters Defined:');
+console.log('🔧 [PARAMS_INIT] - cashfreeClientId: defineString("CASHFREE_CLIENT_ID")');
+console.log('🔧 [PARAMS_INIT] - cashfreeClientSecret: defineSecret("CASHFREE_CLIENT_SECRET")');
+console.log('🔧 [PARAMS_INIT] - cashfreeApiVersion: defineString("CASHFREE_API_VERSION", default: "2023-08-01")');
+console.log('🔧 [PARAMS_INIT] - cashfreeBaseUrl: defineString("CASHFREE_BASE_URL", default: "https://sandbox.cashfree.com")');
+console.log('🔧 [PARAMS_INIT] - backendUrl: defineString("BACKEND_URL", default: "...")');
+console.log('🔧 [PARAMS_INIT] Note: Actual values will be logged on first request');
+console.log('🔧 [PARAMS_INIT] ========================================');
 
 // Set storage bucket env variable BEFORE Firebase initialization
 // Use default value for initialization (param will be resolved at runtime in middleware)
@@ -166,30 +177,73 @@ app.use((req, res, next) => {
 
 // Set environment variables from params (for backward compatibility)
 app.use((req, res, next) => {
-  process.env.NODE_ENV = nodeEnv.value();
-  process.env.CORS_ORIGIN = corsOrigin.value();
-  process.env.FRONTEND_URL = frontendUrl.value();
-  process.env.JWT_SECRET = jwtSecret.value();
-  process.env.JWT_EXPIRES_IN = jwtExpiresIn.value();
-  process.env.APP_STORAGE_BUCKET = firebaseStorageBucket.value();
-  // Cashfree Environment Variables
-  process.env.CASHFREE_CLIENT_ID = cashfreeClientId.value();
-  process.env.CASHFREE_CLIENT_SECRET = cashfreeClientSecret.value();
-  process.env.CASHFREE_API_VERSION = cashfreeApiVersion.value();
-  process.env.CASHFREE_BASE_URL = cashfreeBaseUrl.value();
-  process.env.BACKEND_URL = backendUrl.value();
+  // Get all param values
+  const nodeEnvValue = nodeEnv.value();
+  const corsOriginValue = corsOrigin.value();
+  const frontendUrlValue = frontendUrl.value();
+  const jwtSecretValue = jwtSecret.value();
+  const jwtExpiresInValue = jwtExpiresIn.value();
+  const storageBucketValue = firebaseStorageBucket.value();
+  const cashfreeClientIdValue = cashfreeClientId.value();
+  const cashfreeClientSecretValue = cashfreeClientSecret.value();
+  const cashfreeApiVersionValue = cashfreeApiVersion.value();
+  const cashfreeBaseUrlValue = cashfreeBaseUrl.value();
+  const backendUrlValue = backendUrl.value();
   
-  // Log Payment Gateway configuration on first request (for debugging)
-  if (!global.paymentConfigLogged) {
-    console.log('💳 [PAYMENT_CONFIG] ========================================');
-    console.log('💳 [PAYMENT_CONFIG] Cashfree Configuration Status:');
-    console.log('💳 [PAYMENT_CONFIG] CASHFREE_CLIENT_ID:', cashfreeClientId.value() ? `${cashfreeClientId.value().substring(0, 4)}...` : '❌ MISSING');
-    console.log('💳 [PAYMENT_CONFIG] CASHFREE_CLIENT_SECRET:', cashfreeClientSecret.value() ? '✅ SET' : '❌ MISSING');
-    console.log('💳 [PAYMENT_CONFIG] CASHFREE_BASE_URL:', cashfreeBaseUrl.value() || '❌ MISSING');
-    console.log('💳 [PAYMENT_CONFIG] CASHFREE_API_VERSION:', cashfreeApiVersion.value() || '2023-08-01 (default)');
-    console.log('💳 [PAYMENT_CONFIG] Environment:', cashfreeBaseUrl.value()?.includes('sandbox') ? '🟡 SANDBOX' : cashfreeBaseUrl.value()?.includes('api.cashfree.com') ? '🟢 PRODUCTION' : '❓ UNKNOWN');
-    console.log('💳 [PAYMENT_CONFIG] ========================================');
-    global.paymentConfigLogged = true;
+  // Set environment variables
+  process.env.NODE_ENV = nodeEnvValue;
+  process.env.CORS_ORIGIN = corsOriginValue;
+  process.env.FRONTEND_URL = frontendUrlValue;
+  process.env.JWT_SECRET = jwtSecretValue;
+  process.env.JWT_EXPIRES_IN = jwtExpiresInValue;
+  process.env.APP_STORAGE_BUCKET = storageBucketValue;
+  process.env.CASHFREE_CLIENT_ID = cashfreeClientIdValue;
+  process.env.CASHFREE_CLIENT_SECRET = cashfreeClientSecretValue;
+  process.env.CASHFREE_API_VERSION = cashfreeApiVersionValue;
+  process.env.CASHFREE_BASE_URL = cashfreeBaseUrlValue;
+  process.env.BACKEND_URL = backendUrlValue;
+  
+  // Log all configuration on first request (for debugging)
+  // Use a more reliable flag that persists across instances
+  const configLogKey = 'xperience-gaming-config-logged';
+  if (!global[configLogKey]) {
+    console.log('🔧 [ENV_CONFIG] ========================================');
+    console.log('🔧 [ENV_CONFIG] Firebase Functions Parameters & Environment Variables');
+    console.log('🔧 [ENV_CONFIG] ========================================');
+    
+    // Application Config
+    console.log('🔧 [ENV_CONFIG] Application Configuration:');
+    console.log('🔧 [ENV_CONFIG] - NODE_ENV:', nodeEnvValue || '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - CORS_ORIGIN:', corsOriginValue || '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - FRONTEND_URL:', frontendUrlValue || '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - BACKEND_URL:', backendUrlValue || '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - APP_STORAGE_BUCKET:', storageBucketValue || '❌ NOT SET');
+    
+    // JWT Config
+    console.log('🔧 [ENV_CONFIG] JWT Configuration:');
+    console.log('🔧 [ENV_CONFIG] - JWT_SECRET:', jwtSecretValue ? `***SET (${jwtSecretValue.length} chars)***` : '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - JWT_EXPIRES_IN:', jwtExpiresInValue || '❌ NOT SET (using default: 7d)');
+    
+    // Cashfree Payment Gateway Config (Production only)
+    console.log('🔧 [ENV_CONFIG] Cashfree Payment Gateway Configuration:');
+    console.log('🔧 [ENV_CONFIG] - CASHFREE_CLIENT_ID:', cashfreeClientIdValue ? `${cashfreeClientIdValue.substring(0, 4)}... (${cashfreeClientIdValue.length} chars)` : '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - CASHFREE_CLIENT_SECRET:', cashfreeClientSecretValue ? `***SET (${cashfreeClientSecretValue.length} chars)***` : '❌ NOT SET');
+    console.log('🔧 [ENV_CONFIG] - CASHFREE_BASE_URL:', cashfreeBaseUrlValue || '❌ NOT SET (using default: https://api.cashfree.com)');
+    console.log('🔧 [ENV_CONFIG] - CASHFREE_API_VERSION:', cashfreeApiVersionValue || '❌ NOT SET (using default: 2023-08-01)');
+    console.log('🔧 [ENV_CONFIG] Cashfree Environment: 🟢 PRODUCTION');
+    
+    // Validation warnings
+    console.log('🔧 [ENV_CONFIG] Validation:');
+    if (!cashfreeClientIdValue || !cashfreeClientSecretValue) {
+      console.warn('⚠️  [ENV_CONFIG] WARNING: Cashfree credentials are missing!');
+      console.warn('⚠️  [ENV_CONFIG] Payment functionality will not work.');
+      console.warn('⚠️  [ENV_CONFIG] Set CASHFREE_CLIENT_ID and CASHFREE_CLIENT_SECRET in Firebase Console.');
+    } else {
+      console.log('✅ [ENV_CONFIG] Cashfree credentials are set');
+    }
+    
+    console.log('🔧 [ENV_CONFIG] ========================================');
+    global[configLogKey] = true;
   }
   
   next();

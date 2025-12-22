@@ -78,6 +78,28 @@
         </intent>
         <!-- For Google Maps -->
         <package android:name="com.google.android.apps.maps"/>
+        <!-- For Cashfree Payment Gateway - UPI Apps -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="upi"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tez"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="paytmmp"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="phonepe"/>
+        </intent>
+        <!-- UPI Payment Apps -->
+        <package android:name="com.google.android.apps.nfc.payment"/>
+        <package android:name="com.phonepe.app"/>
+        <package android:name="net.one97.paytm"/>
+        <package android:name="com.google.android.apps.nfc.payment"/>
     </queries>
 </manifest>
 

@@ -80,12 +80,46 @@ class FirebaseService {
     }
   }
   
-  /// Refresh the current user's token
-  static Future<void> refreshToken() async {
+  /// Refresh the current user's token with retry logic for network errors
+  static Future<void> refreshToken({int maxRetries = 3}) async {
     final user = auth.currentUser;
-    if (user != null) {
-      await user.getIdToken(true);
-      AppLogger.d('🔐 [FIREBASE] Token refreshed for user: ${user.uid}');
+    if (user == null) {
+      AppLogger.w('🔐 [FIREBASE] No user to refresh token for');
+      return;
+    }
+
+    int attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        AppLogger.d('🔐 [FIREBASE] Refreshing token (attempt ${attempt + 1}/$maxRetries) for user: ${user.uid}');
+        await user.getIdToken(true);
+        AppLogger.d('🔐 [FIREBASE] Token refreshed successfully for user: ${user.uid}');
+        return; // Success, exit retry loop
+      } on FirebaseAuthException catch (e) {
+        // Handle specific Firebase Auth errors
+        if (e.code == 'network-request-failed') {
+          attempt++;
+          if (attempt >= maxRetries) {
+            AppLogger.e('🔐 [FIREBASE] Failed to refresh token after $maxRetries attempts: Network error');
+            // Don't throw - allow sign-in to continue, token will be fetched when needed
+            return;
+          }
+          // Exponential backoff: wait 1s, 2s, 4s
+          final delay = Duration(seconds: 1 << (attempt - 1));
+          AppLogger.w('🔐 [FIREBASE] Network error, retrying in ${delay.inSeconds}s...');
+          await Future.delayed(delay);
+        } else {
+          // Other Firebase errors - don't retry
+          AppLogger.e('🔐 [FIREBASE] Token refresh failed: ${e.code} - ${e.message}');
+          // Don't throw - allow sign-in to continue
+          return;
+        }
+      } catch (e) {
+        // Unexpected errors
+        AppLogger.e('🔐 [FIREBASE] Unexpected error refreshing token', e);
+        // Don't throw - allow sign-in to continue
+        return;
+      }
     }
   }
   
@@ -183,9 +217,19 @@ class FirebaseService {
       AppLogger.d('🔐 [GOOGLE_SIGNIN] Step 5: Signing in to Firebase...');
       final userCredential = await auth.signInWithCredential(credential);
       
-      // CRITICAL: Force token refresh to ensure we get a fresh token for the new user
-      // This prevents using a cached token from a previous account
-      await refreshToken();
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] ✅ Signed in to Firebase successfully');
+      AppLogger.d('🔐 [GOOGLE_SIGNIN] User UID: ${userCredential.user?.uid}');
+      
+      // Try to refresh token (non-blocking - Firebase usually provides token automatically)
+      // This ensures we get a fresh token for the new user and prevents using cached tokens
+      try {
+        await refreshToken();
+      } catch (e) {
+        // Token refresh failed, but sign-in was successful
+        // Firebase provides a token automatically, so we can continue
+        AppLogger.w('🔐 [GOOGLE_SIGNIN] Token refresh failed, but sign-in successful: $e');
+        AppLogger.w('🔐 [GOOGLE_SIGNIN] Token will be fetched automatically when needed');
+      }
       
       return userCredential;
     } catch (e, stackTrace) {

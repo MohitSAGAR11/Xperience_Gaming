@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/routes.dart';
 import '../../../core/utils.dart';
 import '../../../providers/booking_provider.dart';
 import '../../../widgets/loading_widget.dart';
@@ -18,16 +20,35 @@ class CafeBookingsScreen extends ConsumerWidget {
       cafeBookingsProvider(CafeBookingsParams(cafeId: cafeId)),
     );
 
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to dashboard
+          if (!context.canPop()) {
+            context.go(Routes.ownerDashboard);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
         backgroundColor: AppColors.trueBlack,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+        appBar: AppBar(
+          backgroundColor: AppColors.trueBlack,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // If no parent screen, redirect to dashboard
+              if (!context.canPop()) {
+                context.go(Routes.ownerDashboard);
+              } else {
+                context.pop();
+              }
+            },
+          ),
+          title: const Text('Cafe Bookings'),
         ),
-        title: const Text('Cafe Bookings'),
-      ),
       body: bookingsAsync.when(
         data: (response) {
           if (response.bookings.isEmpty) {
@@ -156,6 +177,7 @@ class CafeBookingsScreen extends ConsumerWidget {
             cafeBookingsProvider(CafeBookingsParams(cafeId: cafeId)),
           ),
         ),
+      ),
       ),
     );
   }

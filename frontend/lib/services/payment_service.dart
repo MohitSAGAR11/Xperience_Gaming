@@ -30,7 +30,20 @@ class PaymentService {
     AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
 
     try {
-      AppLogger.d('💳 [PAYMENT_SERVICE] Calling backend API: ${ApiConstants.createPayment}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+      AppLogger.d('💳 [PAYMENT_SERVICE] 📤 PREPARING API REQUEST');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Endpoint: ${ApiConstants.createPayment}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Request Payload:');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - bookingId: $bookingId');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - amount: $amount (type: ${amount.runtimeType})');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - firstName: $firstName');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - email: $email');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - phone: ${phone ?? "null"}');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - productInfo: ${productInfo ?? "null"}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+      
+      final requestStartTime = DateTime.now();
+      AppLogger.d('💳 [PAYMENT_SERVICE] ⏱️ API Request started at: ${requestStartTime.toIso8601String()}');
       
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.createPayment,
@@ -44,10 +57,18 @@ class PaymentService {
         },
       );
 
-      AppLogger.d('💳 [PAYMENT_SERVICE] Backend response received');
+      final requestDuration = DateTime.now().difference(requestStartTime);
+      AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+      AppLogger.d('💳 [PAYMENT_SERVICE] 📥 API RESPONSE RECEIVED');
+      AppLogger.d('💳 [PAYMENT_SERVICE] ⏱️ Request duration: ${requestDuration.inMilliseconds}ms');
       AppLogger.d('💳 [PAYMENT_SERVICE] Response success: ${response.isSuccess}');
-      AppLogger.d('💳 [PAYMENT_SERVICE] Response message: ${response.message}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Response message: ${response.message ?? "null"}');
       AppLogger.d('💳 [PAYMENT_SERVICE] Has data: ${response.data != null}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Data type: ${response.data?.runtimeType}');
+      if (response.data != null) {
+        AppLogger.d('💳 [PAYMENT_SERVICE] Data keys: ${response.data!.keys.toList()}');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Data preview: ${response.data!.toString().substring(0, response.data!.toString().length > 500 ? 500 : response.data!.toString().length)}');
+      }
 
       if (!response.isSuccess || response.data == null) {
         AppLogger.e('💳 [PAYMENT_SERVICE] Payment initiation failed', null);
@@ -58,27 +79,79 @@ class PaymentService {
         );
       }
 
-      AppLogger.d('💳 [PAYMENT_SERVICE] Parsing payment response data');
-      final paymentResponse = PaymentResponse.fromJson(response.data!);
+      AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+      AppLogger.d('💳 [PAYMENT_SERVICE] 🔄 PARSING RESPONSE DATA');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Backend response format: SDK-compatible');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Expected fields: payment_session_id, order_id');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Attempting to parse JSON...');
       
-      if (paymentResponse.success && paymentResponse.data != null) {
-        AppLogger.d('💳 [PAYMENT_SERVICE] Payment data parsed successfully');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Order ID: ${paymentResponse.data!.orderId}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Payment Session ID: ${paymentResponse.data!.paymentSessionId}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Amount: ${paymentResponse.data!.orderAmount}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Currency: ${paymentResponse.data!.orderCurrency}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Customer Name: ${paymentResponse.data!.customerName}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Customer Email: ${paymentResponse.data!.customerEmail}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Customer Phone: ${paymentResponse.data!.customerPhone}');
-        AppLogger.d('💳 [PAYMENT_SERVICE] Return URL: ${paymentResponse.data!.returnUrl}');
+      PaymentResponse paymentResponse;
+      try {
+        paymentResponse = PaymentResponse.fromJson(response.data!);
+        AppLogger.d('💳 [PAYMENT_SERVICE] ✅ JSON parsing successful');
+      } catch (parseError, stackTrace) {
+        AppLogger.e('💳 [PAYMENT_SERVICE] ❌ JSON PARSING FAILED', parseError, stackTrace);
+        AppLogger.e('💳 [PAYMENT_SERVICE] Raw data: ${response.data}');
+        AppLogger.e('💳 [PAYMENT_SERVICE] Data type: ${response.data?.runtimeType}');
+        rethrow;
+      }
+      
+      AppLogger.d('💳 [PAYMENT_SERVICE] Parsed PaymentResponse:');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - success: ${paymentResponse.success}');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - message: ${paymentResponse.message}');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - paymentSessionId (direct): ${paymentResponse.paymentSessionId != null ? "${paymentResponse.paymentSessionId!.substring(0, 20)}..." : "null"}');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - orderId (direct): ${paymentResponse.orderId ?? "null"}');
+      AppLogger.d('💳 [PAYMENT_SERVICE]   - data is null: ${paymentResponse.data == null}');
+      
+      if (paymentResponse.success) {
+        final sessionId = paymentResponse.paymentSessionId ?? paymentResponse.data?.paymentSessionId;
+        final orderId = paymentResponse.orderId ?? paymentResponse.data?.orderId;
+        
+        if (sessionId == null || sessionId.isEmpty) {
+          AppLogger.e('💳 [PAYMENT_SERVICE] ❌ Payment session ID is missing!');
+          return PaymentResponse(
+            success: false,
+            message: 'Payment session ID not received from backend',
+          );
+        }
+        
+        if (orderId == null || orderId.isEmpty) {
+          AppLogger.e('💳 [PAYMENT_SERVICE] ❌ Order ID is missing!');
+          return PaymentResponse(
+            success: false,
+            message: 'Order ID not received from backend',
+          );
+        }
+        
+        AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+        AppLogger.d('💳 [PAYMENT_SERVICE] ✅ PAYMENT DATA PARSED SUCCESSFULLY');
+        AppLogger.d('💳 [PAYMENT_SERVICE] Payment details:');
+        AppLogger.d('💳 [PAYMENT_SERVICE]   - orderId: $orderId');
+        AppLogger.d('💳 [PAYMENT_SERVICE]   - paymentSessionId: ${sessionId.substring(0, sessionId.length > 20 ? 20 : sessionId.length)}...');
+        AppLogger.d('💳 [PAYMENT_SERVICE]   - paymentSessionId length: ${sessionId.length}');
+        AppLogger.d('💳 [PAYMENT_SERVICE]   - Ready for Cashfree SDK');
         AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
       } else {
-        AppLogger.w('💳 [PAYMENT_SERVICE] Payment response indicates failure');
+        AppLogger.w('💳 [PAYMENT_SERVICE] ========================================');
+        AppLogger.w('💳 [PAYMENT_SERVICE] ⚠️ PAYMENT RESPONSE INDICATES FAILURE');
+        AppLogger.w('💳 [PAYMENT_SERVICE] success: ${paymentResponse.success}');
+        AppLogger.w('💳 [PAYMENT_SERVICE] message: ${paymentResponse.message}');
+        AppLogger.w('💳 [PAYMENT_SERVICE] ========================================');
       }
 
       return paymentResponse;
     } catch (e, stackTrace) {
-      AppLogger.e('💳 [PAYMENT_SERVICE] Payment initialization exception', e, stackTrace);
+      AppLogger.e('💳 [PAYMENT_SERVICE] ========================================');
+      AppLogger.e('💳 [PAYMENT_SERVICE] ❌ PAYMENT INITIALIZATION EXCEPTION');
+      AppLogger.e('💳 [PAYMENT_SERVICE] Exception type: ${e.runtimeType}');
+      AppLogger.e('💳 [PAYMENT_SERVICE] Exception message: $e');
+      AppLogger.e('💳 [PAYMENT_SERVICE] Stack trace:');
+      AppLogger.e('💳 [PAYMENT_SERVICE] $stackTrace');
+      AppLogger.e('💳 [PAYMENT_SERVICE] Request details:');
+      AppLogger.e('💳 [PAYMENT_SERVICE]   - bookingId: $bookingId');
+      AppLogger.e('💳 [PAYMENT_SERVICE]   - amount: $amount');
+      AppLogger.e('💳 [PAYMENT_SERVICE]   - endpoint: ${ApiConstants.createPayment}');
+      AppLogger.e('💳 [PAYMENT_SERVICE] ========================================');
       return PaymentResponse(
         success: false,
         message: 'Payment initialization failed: $e',
@@ -90,15 +163,33 @@ class PaymentService {
   Future<PaymentVerifyResponse> verifyPayment({
     required String orderId,
   }) async {
-    AppLogger.d('💳 [PAYMENT_SERVICE] Verifying payment for order: $orderId');
+    AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+    AppLogger.d('💳 [PAYMENT_SERVICE] 🔍 VERIFYING PAYMENT');
+    AppLogger.d('💳 [PAYMENT_SERVICE] Order ID: $orderId');
+    AppLogger.d('💳 [PAYMENT_SERVICE] Endpoint: ${ApiConstants.verifyPayment}');
+    AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
     
     try {
+      final verifyStartTime = DateTime.now();
+      AppLogger.d('💳 [PAYMENT_SERVICE] ⏱️ Verification request started at: ${verifyStartTime.toIso8601String()}');
+      
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.verifyPayment,
         data: {
           'order_id': orderId,
         },
       );
+      
+      final verifyDuration = DateTime.now().difference(verifyStartTime);
+      AppLogger.d('💳 [PAYMENT_SERVICE] ========================================');
+      AppLogger.d('💳 [PAYMENT_SERVICE] 📥 VERIFICATION RESPONSE RECEIVED');
+      AppLogger.d('💳 [PAYMENT_SERVICE] ⏱️ Verification duration: ${verifyDuration.inMilliseconds}ms');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Response success: ${response.isSuccess}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Response message: ${response.message ?? "null"}');
+      AppLogger.d('💳 [PAYMENT_SERVICE] Has data: ${response.data != null}');
+      if (response.data != null) {
+        AppLogger.d('💳 [PAYMENT_SERVICE] Verification data: ${response.data}');
+      }
 
       if (!response.isSuccess || response.data == null) {
         return PaymentVerifyResponse(
@@ -203,23 +294,53 @@ class PaymentService {
   }
 }
 
-/// Payment Response
+/// Payment Response (Updated for SDK compatibility)
 class PaymentResponse {
   final bool success;
   final String message;
   final PaymentData? data;
+  
+  // SDK-compatible fields (direct from backend)
+  final String? paymentSessionId;
+  final String? orderId;
 
   PaymentResponse({
     required this.success,
     required this.message,
     this.data,
+    this.paymentSessionId,
+    this.orderId,
   });
 
   factory PaymentResponse.fromJson(Map<String, dynamic> json) {
+    // Backend now returns: { success: true, payment_session_id: "...", order_id: "..." }
+    // Support both old format (data object) and new format (direct fields)
+    final hasDataObject = json['data'] != null;
+    final hasDirectFields = json['payment_session_id'] != null || json['order_id'] != null;
+    
+    PaymentData? paymentData;
+    if (hasDataObject) {
+      paymentData = PaymentData.fromJson(json['data']);
+    } else if (hasDirectFields) {
+      // Create PaymentData from direct fields
+      paymentData = PaymentData(
+        orderId: json['order_id'] ?? '',
+        paymentSessionId: json['payment_session_id'] ?? '',
+        orderAmount: (json['order_amount'] ?? '0').toString(),
+        orderCurrency: json['order_currency'] ?? 'INR',
+        customerName: json['customerName'] ?? '',
+        customerEmail: json['customerEmail'] ?? '',
+        customerPhone: json['customerPhone'] ?? '',
+        returnUrl: json['returnUrl'] ?? '',
+      );
+    }
+    
     return PaymentResponse(
       success: json['success'] ?? false,
       message: json['message'] ?? '',
-      data: json['data'] != null ? PaymentData.fromJson(json['data']) : null,
+      data: paymentData,
+      paymentSessionId: json['payment_session_id'] ?? json['data']?['paymentSessionId'],
+      orderId: json['order_id'] ?? json['data']?['orderId'],
     );
   }
 }
@@ -315,9 +436,15 @@ class PaymentData {
 
     // Use Cashfree JavaScript SDK for checkout (recommended approach)
     // This avoids 404 errors and uses Cashfree's official integration method
-    final isSandbox = true; // Set to false for production
+    // Production environment only
     
-    AppLogger.d('💳 [PAYMENT_FORM] Generating Cashfree checkout page with SDK...');
+    AppLogger.d('💳 [PAYMENT_FORM] ========================================');
+    AppLogger.d('💳 [PAYMENT_FORM] 🔨 GENERATING HTML CONTENT');
+    AppLogger.d('💳 [PAYMENT_FORM] Environment: Production');
+    AppLogger.d('💳 [PAYMENT_FORM] SDK Mode: production');
+    AppLogger.d('💳 [PAYMENT_FORM] Checkout URL: https://payments.cashfree.com');
+    
+    final htmlStartTime = DateTime.now();
     final htmlContent = '''
       <!DOCTYPE html>
       <html>
@@ -366,7 +493,7 @@ class PaymentData {
             margin: 20px 0;
           }
         </style>
-        <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+        <!-- Removed Cashfree SDK - using direct URL redirect instead for WebView compatibility -->
       </head>
       <body>
         <div class="container">
@@ -383,53 +510,63 @@ class PaymentData {
           console.log('💳 [WEBVIEW] Cashfree Payment Initialization Starting...');
           console.log('💳 [WEBVIEW] Order ID: $orderId');
           console.log('💳 [WEBVIEW] Payment Session ID: $paymentSessionId');
-          console.log('💳 [WEBVIEW] Sandbox Mode: $isSandbox');
+          console.log('💳 [WEBVIEW] Payment Session ID Length: ${paymentSessionId.length}');
+          console.log('💳 [WEBVIEW] Environment: Production');
           
-          // Initialize Cashfree SDK
-          function initializeCashfree() {
+          // Use direct URL redirect instead of SDK (more reliable in WebView)
+          // Cashfree SDK checkout() requires PaymentJSInterface which doesn't exist in Flutter WebView
+          function redirectToCashfree() {
             try {
-              if (typeof Cashfree === 'undefined') {
-                console.error('💳 [WEBVIEW] Cashfree SDK not loaded, retrying...');
-                setTimeout(initializeCashfree, 500);
-                return;
-              }
+              // Cashfree checkout URL format: https://payments.cashfree.com/checkout/payment_session_id/{session_id}
+              // Note: Do NOT use /pg/checkout - that's for API endpoints, not user-facing checkout
+              // URL encode the payment session ID to handle special characters
+              const encodedSessionId = encodeURIComponent('$paymentSessionId');
+              const checkoutUrl = 'https://payments.cashfree.com/checkout/payment_session_id/' + encodedSessionId;
               
-              console.log('💳 [WEBVIEW] Initializing Cashfree SDK...');
-              const cashfree = Cashfree({
-                mode: "${isSandbox ? 'sandbox' : 'production'}"
-              });
-              
-              console.log('💳 [WEBVIEW] Opening Cashfree checkout...');
-              cashfree.checkout({
-                paymentSessionId: "$paymentSessionId",
-                redirectTarget: "_self"
-              });
-              
-              console.log('💳 [WEBVIEW] ✅ Checkout initiated');
+              console.log('💳 [WEBVIEW] Redirecting to Cashfree checkout...');
+              console.log('💳 [WEBVIEW] Payment Session ID (raw): $paymentSessionId');
+              console.log('💳 [WEBVIEW] Payment Session ID (encoded): ' + encodedSessionId);
+              console.log('💳 [WEBVIEW] Checkout URL: ' + checkoutUrl);
+              console.log('💳 [WEBVIEW] URL length: ' + checkoutUrl.length);
               console.log('💳 [WEBVIEW] ========================================');
+              
+              // Direct redirect - most reliable method for WebView
+              // Use replace instead of href to prevent back button issues
+              window.location.replace(checkoutUrl);
             } catch (error) {
-              console.error('💳 [WEBVIEW] Error initializing Cashfree:', error);
-              // Fallback to direct URL redirect if SDK fails
-              console.log('💳 [WEBVIEW] Falling back to direct URL redirect...');
-              const checkoutUrl = 'https://sandbox.cashfree.com/pg/checkout/payment_session_id/$paymentSessionId';
-              window.location.href = checkoutUrl;
+              console.error('💳 [WEBVIEW] ❌ ERROR redirecting to Cashfree:', error);
+              console.error('💳 [WEBVIEW] Error type: ' + error.name);
+              console.error('💳 [WEBVIEW] Error message: ' + error.message);
+              console.error('💳 [WEBVIEW] Error stack: ' + error.stack);
+              console.error('💳 [WEBVIEW] ========================================');
             }
           }
           
-          // Wait for SDK to load, then initialize
+          // Redirect immediately when page loads
           if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initializeCashfree);
+            document.addEventListener('DOMContentLoaded', redirectToCashfree);
           } else {
-            setTimeout(initializeCashfree, 500);
+            // Page already loaded, redirect immediately
+            setTimeout(redirectToCashfree, 100);
           }
         </script>
       </body>
       </html>
     ''';
     
-    AppLogger.d('💳 [PAYMENT_FORM] HTML document generated');
-    AppLogger.d('💳 [PAYMENT_FORM] Total HTML length: ${htmlContent.length} characters');
-    AppLogger.d('💳 [PAYMENT_FORM] ✅ CASHFREE PAYMENT PAGE READY');
+    final htmlDuration = DateTime.now().difference(htmlStartTime);
+    AppLogger.d('💳 [PAYMENT_FORM] ========================================');
+    AppLogger.d('💳 [PAYMENT_FORM] ✅ HTML GENERATION COMPLETE');
+    AppLogger.d('💳 [PAYMENT_FORM] ⏱️ Generation time: ${htmlDuration.inMicroseconds}μs');
+    AppLogger.d('💳 [PAYMENT_FORM] HTML Statistics:');
+    AppLogger.d('💳 [PAYMENT_FORM]   - Total length: ${htmlContent.length} characters');
+    AppLogger.d('💳 [PAYMENT_FORM]   - Contains paymentSessionId: ${htmlContent.contains(paymentSessionId)}');
+    AppLogger.d('💳 [PAYMENT_FORM]   - Contains Cashfree SDK: ${htmlContent.contains('sdk.cashfree.com')}');
+    AppLogger.d('💳 [PAYMENT_FORM]   - Contains checkout call: ${htmlContent.contains('cashfree.checkout')}');
+    AppLogger.d('💳 [PAYMENT_FORM]   - Contains production mode: ${htmlContent.contains('mode: "production"')}');
+    AppLogger.d('💳 [PAYMENT_FORM]   - Contains fallback URL: ${htmlContent.contains('payments.cashfree.com')}');
+    AppLogger.d('💳 [PAYMENT_FORM] HTML Preview (first 300 chars):');
+    AppLogger.d('💳 [PAYMENT_FORM] ${htmlContent.substring(0, htmlContent.length > 300 ? 300 : htmlContent.length)}...');
     AppLogger.d('💳 [PAYMENT_FORM] ========================================');
     
     return htmlContent;

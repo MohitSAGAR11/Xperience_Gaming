@@ -28,9 +28,21 @@ class CafeDetailsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cafeAsync = ref.watch(cafeProvider(cafeId));
 
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      body: cafeAsync.when(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to home
+          if (!context.canPop()) {
+            context.go(Routes.clientHome);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.trueBlack,
+        body: cafeAsync.when(
         data: (cafe) {
           if (cafe == null) {
             return const ErrorDisplay(message: 'Cafe not found');
@@ -45,7 +57,14 @@ class CafeDetailsScreen extends ConsumerWidget {
                 backgroundColor: AppColors.surfaceDark,
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () {
+                    // If no parent screen, redirect to home
+                    if (!context.canPop()) {
+                      context.go(Routes.clientHome);
+                    } else {
+                      context.pop();
+                    }
+                  },
                 ),
                 flexibleSpace: FlexibleSpaceBar(
                   background: _CafeImageCarousel(
@@ -174,6 +193,35 @@ class CafeDetailsScreen extends ConsumerWidget {
                             style: const TextStyle(color: AppColors.textSecondary),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 8),
+                      
+                      // Phone Number - Clickable
+                      InkWell(
+                        onTap: () async {
+                          try {
+                            final phoneUri = Uri.parse('tel:${cafe.phoneNumber}');
+                            if (await canLaunchUrl(phoneUri)) {
+                              await launchUrl(phoneUri);
+                            }
+                          } catch (e) {
+                            debugPrint('📞 [PHONE] Error launching phone: $e');
+                          }
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.phone, color: AppColors.cyberCyan, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              cafe.phoneNumber,
+                              style: const TextStyle(
+                                color: AppColors.cyberCyan,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.call, color: AppColors.cyberCyan, size: 16),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 24),
 
@@ -363,6 +411,7 @@ class CafeDetailsScreen extends ConsumerWidget {
                 ),
               )
             : null,
+      ),
       ),
     );
   }

@@ -28,6 +28,9 @@ class Booking {
   final DateTime? refundedAt;
   final String? refundReason;
   final String? notes;
+  final int? numberOfPcs; // Number of PCs in group booking
+  final int? groupBookingIndex; // Position in group (1, 2, 3, ...)
+  final String? groupBookingId; // ID to link all bookings in a group together
   final DateTime createdAt;
   final DateTime updatedAt;
   final Cafe? cafe;
@@ -59,6 +62,9 @@ class Booking {
     this.refundedAt,
     this.refundReason,
     this.notes,
+    this.numberOfPcs,
+    this.groupBookingIndex,
+    this.groupBookingId,
     required this.createdAt,
     required this.updatedAt,
     this.cafe,
@@ -92,6 +98,9 @@ class Booking {
       refundedAt: json['refundedAt'] != null ? _parseDateTime(json['refundedAt']) : null,
       refundReason: json['refundReason'],
       notes: json['notes'],
+      numberOfPcs: json['numberOfPcs'] != null ? (json['numberOfPcs'] is int ? json['numberOfPcs'] : int.tryParse(json['numberOfPcs'].toString())) : null,
+      groupBookingIndex: json['groupBookingIndex'] != null ? (json['groupBookingIndex'] is int ? json['groupBookingIndex'] : int.tryParse(json['groupBookingIndex'].toString())) : null,
+      groupBookingId: json['groupBookingId'],
       createdAt: _parseDateTime(json['createdAt']),
       updatedAt: _parseDateTime(json['updatedAt']),
       cafe: json['cafe'] != null ? Cafe.fromJson(json['cafe']) : null,
@@ -124,6 +133,9 @@ class Booking {
 
   /// Check if booking is for console
   bool get isConsoleBooking => stationType == 'console';
+
+  /// Check if booking is part of a group booking
+  bool get isGroupBooking => groupBookingId != null && numberOfPcs != null && numberOfPcs! > 1;
 
   /// Check if booking is upcoming
   bool get isUpcoming {
@@ -214,6 +226,7 @@ class BookingRequest {
   final String stationType;
   final String? consoleType;
   final int stationNumber;
+  final int numberOfPcs; // Number of PCs to book (for group bookings)
   final String bookingDate;
   final String startTime;
   final String endTime;
@@ -224,6 +237,7 @@ class BookingRequest {
     required this.stationType,
     this.consoleType,
     required this.stationNumber,
+    this.numberOfPcs = 1, // Default to 1 PC
     required this.bookingDate,
     required this.startTime,
     required this.endTime,
@@ -236,6 +250,7 @@ class BookingRequest {
       'stationType': stationType,
       if (consoleType != null) 'consoleType': consoleType,
       'stationNumber': stationNumber,
+      'numberOfPcs': numberOfPcs,
       'bookingDate': bookingDate,
       'startTime': startTime,
       'endTime': endTime,

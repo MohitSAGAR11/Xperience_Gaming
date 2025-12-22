@@ -31,6 +31,9 @@ const bookingValidation = [
   body('stationNumber')
     .notEmpty().withMessage('Station/unit number is required')
     .isInt({ min: 1 }).withMessage('Station/unit number must be at least 1'),
+  body('numberOfPcs')
+    .optional()
+    .isInt({ min: 1, max: 20 }).withMessage('Number of PCs must be between 1 and 20'),
   body('bookingDate')
     .notEmpty().withMessage('Booking date is required')
     .isDate().withMessage('Invalid date format (YYYY-MM-DD)'),

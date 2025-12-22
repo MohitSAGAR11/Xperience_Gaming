@@ -26,7 +26,7 @@ class _ClientBottomNav extends StatelessWidget {
   int _getSelectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
     if (location.startsWith('/client/search')) return 1;
-    if (location.startsWith('/client/community')) return 2;
+    if (location.startsWith('/client/upcoming')) return 2;
     if (location.startsWith('/client/bookings')) return 3;
     if (location.startsWith('/client/profile')) return 4;
     return 0;
@@ -74,11 +74,11 @@ class _ClientBottomNav extends StatelessWidget {
               ),
               Expanded(
                 child: _NavItem(
-                  icon: Iconsax.people,
-                  activeIcon: Iconsax.people5,
-                  label: 'Community',
+                  icon: Icons.rocket_launch,
+                  activeIcon: Icons.rocket_launch,
+                  label: 'Upcoming',
                   isSelected: selectedIndex == 2,
-                  onTap: () => context.go(Routes.community),
+                  onTap: () => context.go(Routes.upcomingFeatures),
                 ),
               ),
               Expanded(

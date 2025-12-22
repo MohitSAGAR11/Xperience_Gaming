@@ -7,7 +7,7 @@ import '../screens/auth/auth_screen.dart';
 import '../screens/client/client_main_screen.dart';
 import '../screens/client/home/client_home_screen.dart';
 import '../screens/client/search/search_screen.dart';
-import '../screens/client/community/community_screen.dart';
+import '../screens/client/upcoming/upcoming_features_screen.dart';
 import '../screens/client/cafe/cafe_details_screen.dart';
 import '../screens/client/booking/slot_selection_screen.dart';
 import '../screens/client/booking/booking_confirmation_screen.dart';
@@ -34,7 +34,7 @@ class Routes {
   // Client Routes
   static const String clientHome = '/client';
   static const String search = '/client/search';
-  static const String community = '/client/community';
+  static const String upcomingFeatures = '/client/upcoming';
   static const String cafeDetails = '/client/cafe/:id';
   static const String slotSelection = '/client/cafe/:id/book';
   static const String bookingConfirmation = '/client/booking/confirm';
@@ -94,9 +94,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
           GoRoute(
-            path: Routes.community,
-            name: 'community',
-            builder: (context, state) => const CommunityScreen(),
+            path: Routes.upcomingFeatures,
+            name: 'upcomingFeatures',
+            builder: (context, state) => const UpcomingFeaturesScreen(),
           ),
           GoRoute(
             path: Routes.myBookings,

@@ -30,6 +30,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
   final _descriptionController = TextEditingController();
   final _addressController = TextEditingController();
   final _cityController = TextEditingController();
+  final _phoneNumberController = TextEditingController();
   final _mapsLinkController = TextEditingController();
   final _hourlyRateController = TextEditingController();
   final _totalPcStationsController = TextEditingController();
@@ -82,6 +83,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
         _descriptionController.text = cafe.description ?? '';
         _addressController.text = cafe.address;
         _cityController.text = cafe.city;
+        _phoneNumberController.text = cafe.phoneNumber;
         _mapsLinkController.text = cafe.mapsLink;
         _hourlyRateController.text = cafe.hourlyRate.toString();
         _totalPcStationsController.text = cafe.totalPcStations.toString();
@@ -109,6 +111,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
     _descriptionController.dispose();
     _addressController.dispose();
     _cityController.dispose();
+    _phoneNumberController.dispose();
     _mapsLinkController.dispose();
     _hourlyRateController.dispose();
     _totalPcStationsController.dispose();
@@ -206,6 +209,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
       'description': _descriptionController.text.trim(),
       'address': _addressController.text.trim(),
       'city': _cityController.text.trim(),
+      'phoneNumber': _phoneNumberController.text.trim(),
       'mapsLink': _mapsLinkController.text.trim(),
       'hourlyRate': double.parse(_hourlyRateController.text),
       'totalPcStations': int.parse(_totalPcStationsController.text),
@@ -237,16 +241,35 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to dashboard
+          if (!context.canPop()) {
+            context.go(Routes.ownerDashboard);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
         backgroundColor: AppColors.trueBlack,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+        appBar: AppBar(
+          backgroundColor: AppColors.trueBlack,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // If no parent screen, redirect to dashboard
+              if (!context.canPop()) {
+                context.go(Routes.ownerDashboard);
+              } else {
+                context.pop();
+              }
+            },
+          ),
+          title: Text(isEditing ? 'Edit Cafe' : 'Add New Cafe'),
         ),
-        title: Text(isEditing ? 'Edit Cafe' : 'Add New Cafe'),
-      ),
       body: _isDataLoading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.success),
@@ -295,6 +318,25 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
                 hint: 'City name',
                 prefixIcon: Icons.location_city,
                 validator: (v) => Validators.validateRequired(v, 'City'),
+              ),
+              const SizedBox(height: 16),
+              NeonTextField(
+                controller: _phoneNumberController,
+                label: 'Phone Number',
+                hint: 'e.g., +91 9876543210',
+                prefixIcon: Icons.phone,
+                keyboardType: TextInputType.phone,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Phone number is required';
+                  }
+                  // Basic phone validation (10-15 digits, may include +, spaces, dashes)
+                  final phoneRegex = RegExp(r'^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$');
+                  if (!phoneRegex.hasMatch(v.trim())) {
+                    return 'Please enter a valid phone number';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               NeonTextField(
@@ -506,6 +548,7 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

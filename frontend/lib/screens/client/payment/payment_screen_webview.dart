@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-
 import '../../../config/theme.dart';
+import '../../../config/routes.dart';
 import '../../../config/constants.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/firebase_service.dart';
@@ -110,10 +110,26 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
       }
 
       // Generate HTML page using PaymentData
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] 🔨 GENERATING HTML CONTENT');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] PaymentData validation:');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - orderId: ${paymentResponse.data!.orderId}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - paymentSessionId: ${paymentResponse.data!.paymentSessionId}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - paymentSessionId length: ${paymentResponse.data!.paymentSessionId.length}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - paymentSessionId empty: ${paymentResponse.data!.paymentSessionId.isEmpty}');
+      
+      final htmlStartTime = DateTime.now();
       final htmlContent = paymentResponse.data!.buildPaymentPageHtml();
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ HTML Content generated');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] HTML Length: ${htmlContent.length}');
-      AppLogger.d('💳 [PAYMENT_WEBVIEW] Payment Session ID: ${paymentResponse.data!.paymentSessionId}');
+      final htmlDuration = DateTime.now().difference(htmlStartTime);
+      
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] ✅ HTML CONTENT GENERATED');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] ⏱️ Generation time: ${htmlDuration.inMicroseconds}μs');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW] HTML Statistics:');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - Length: ${htmlContent.length} characters');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - Contains paymentSessionId: ${htmlContent.contains(paymentResponse.data!.paymentSessionId)}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - Contains Cashfree SDK: ${htmlContent.contains('sdk.cashfree.com')}');
+      AppLogger.d('💳 [PAYMENT_WEBVIEW]   - Contains checkout: ${htmlContent.contains('cashfree.checkout')}');
       AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
 
       // Create WebView controller with proper configuration to handle cross-origin
@@ -165,12 +181,28 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Error Type: ${error.errorType}');
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Description: ${error.description}');
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Failed URL: ${error.url}');
+              AppLogger.e('💳 [PAYMENT_WEBVIEW] Is 404 Error: ${error.description.contains('404') || error.description.contains('not found') || error.description.contains('Page Not Found')}');
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Is ORB Error: ${error.description.contains('ERR_BLOCKED_BY_ORB')}');
               AppLogger.e('💳 [PAYMENT_WEBVIEW] Is Abort Error: ${error.description.contains('ERR_ABORTED')}');
               
-              // Ignore ORB errors - they're expected when redirecting to Cashfree
-              if (error.description.contains('ERR_BLOCKED_BY_ORB') || 
-                  error.description.contains('ERR_ABORTED')) {
+              // Check for 404/Page Not Found errors
+              final is404Error = error.description.contains('404') || 
+                                error.description.contains('not found') || 
+                                error.description.contains('Page Not Found') ||
+                                error.errorCode == -2; // HTTP_NOT_FOUND
+              
+              if (is404Error) {
+                AppLogger.e('💳 [PAYMENT_WEBVIEW] ❌ 404 PAGE NOT FOUND ERROR');
+                AppLogger.e('💳 [PAYMENT_WEBVIEW] Failed URL: ${error.url}');
+                AppLogger.e('💳 [PAYMENT_WEBVIEW] This usually means:');
+                AppLogger.e('💳 [PAYMENT_WEBVIEW]   1. Incorrect Cashfree checkout URL format');
+                AppLogger.e('💳 [PAYMENT_WEBVIEW]   2. Invalid payment session ID');
+                AppLogger.e('💳 [PAYMENT_WEBVIEW]   3. Payment session expired or revoked');
+                if (mounted) {
+                  SnackbarUtils.showError(context, 'Payment page not found. Please try again or contact support.');
+                }
+              } else if (error.description.contains('ERR_BLOCKED_BY_ORB') || 
+                         error.description.contains('ERR_ABORTED')) {
                 AppLogger.w('💳 [PAYMENT_WEBVIEW] ⚠️ ORB/Abort error (expected during form submission)');
                 AppLogger.w('💳 [PAYMENT_WEBVIEW] This is normal when submitting forms to external domains');
                 // Don't show error to user - this is normal during form submission
@@ -268,7 +300,17 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
       
       AppLogger.d('💳 [PAYMENT_WEBVIEW] ========================================');
     } catch (e, stackTrace) {
-      AppLogger.e('💳 [PAYMENT_WEBVIEW] Error initializing WebView', e, stackTrace);
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] ❌ WEBVIEW INITIALIZATION ERROR');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] Exception type: ${e.runtimeType}');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] Exception message: $e');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] Stack trace:');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] $stackTrace');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] Context:');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW]   - bookingId: ${widget.bookingId}');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW]   - amount: ${widget.amount}');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW]   - mounted: $mounted');
+      AppLogger.e('💳 [PAYMENT_WEBVIEW] ========================================');
       if (mounted) {
         SnackbarUtils.showError(context, 'Failed to initialize payment: $e');
         context.pop();
@@ -279,19 +321,36 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      appBar: AppBar(
-        title: const Text('Payment'),
-        backgroundColor: AppColors.trueBlack,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () {
-            AppLogger.d('💳 [PAYMENT_WEBVIEW] User closed payment screen');
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to home
+          if (!context.canPop()) {
+            context.go(Routes.clientHome);
+          } else {
             context.pop(false);
-          },
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.trueBlack,
+        appBar: AppBar(
+          title: const Text('Payment'),
+          backgroundColor: AppColors.trueBlack,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              AppLogger.d('💳 [PAYMENT_WEBVIEW] User closed payment screen');
+              // If no parent screen, redirect to home
+              if (!context.canPop()) {
+                context.go(Routes.clientHome);
+              } else {
+                context.pop(false);
+              }
+            },
+          ),
         ),
-      ),
       body: _isInitialized && _controller != null
           ? Stack(
               children: [
@@ -337,6 +396,7 @@ class _PaymentScreenWebViewState extends ConsumerState<PaymentScreenWebView> {
                 ),
               ),
             ),
+      ),
     );
   }
 }

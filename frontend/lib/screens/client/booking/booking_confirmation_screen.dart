@@ -20,9 +20,36 @@ class BookingConfirmationScreen extends StatelessWidget {
         ? Booking.fromJson(bookingData['booking'])
         : null;
 
-    return Scaffold(
-      backgroundColor: AppColors.trueBlack,
-      body: SafeArea(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // If no parent screen, redirect to home
+          if (!context.canPop()) {
+            context.go(Routes.clientHome);
+          } else {
+            context.pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.trueBlack,
+        appBar: AppBar(
+          backgroundColor: AppColors.trueBlack,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // If no parent screen, redirect to home
+              if (!context.canPop()) {
+                context.go(Routes.clientHome);
+              } else {
+                context.pop();
+              }
+            },
+          ),
+          title: const Text('Booking Confirmed'),
+        ),
+        body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -84,14 +111,6 @@ class BookingConfirmationScreen extends StatelessWidget {
                       ),
                       const Divider(color: AppColors.cardDark, height: 24),
                       _DetailRow(
-                        icon: booking.isPcBooking
-                            ? Icons.computer
-                            : Icons.sports_esports,
-                        label: 'Station',
-                        value: booking.stationDisplay,
-                      ),
-                      const Divider(color: AppColors.cardDark, height: 24),
-                      _DetailRow(
                         icon: Icons.calendar_today,
                         label: 'Date',
                         value: DateTimeUtils.formatDateShort(
@@ -139,27 +158,7 @@ class BookingConfirmationScreen extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // Payment Note
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: AppColors.warning, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Pay at the cafe when you arrive',
-                        style: TextStyle(color: AppColors.warning, fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+             
 
               const Spacer(),
 
@@ -176,6 +175,7 @@ class BookingConfirmationScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }

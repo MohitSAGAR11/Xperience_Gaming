@@ -255,6 +255,7 @@ const createBooking = async (req, res) => {
       stationType = 'pc',
       consoleType,
       stationNumber, 
+      numberOfPcs = 1, // Number of PCs to book (default 1)
       bookingDate, 
       startTime, 
       endTime, 
@@ -266,11 +267,30 @@ const createBooking = async (req, res) => {
       stationType,
       consoleType,
       stationNumber,
+      numberOfPcs,
       bookingDate,
       startTime,
       endTime,
       notes: notes || 'none'
     });
+
+    // Validate numberOfPcs
+    if (numberOfPcs < 1 || numberOfPcs > 20) {
+      console.log('🎫 [BOOKING] ERROR: Invalid number of PCs');
+      return res.status(400).json({
+        success: false,
+        message: 'Number of PCs must be between 1 and 20'
+      });
+    }
+
+    // For console bookings, numberOfPcs should be 1
+    if (stationType === 'console' && numberOfPcs !== 1) {
+      console.log('🎫 [BOOKING] ERROR: Console bookings can only book 1 unit at a time');
+      return res.status(400).json({
+        success: false,
+        message: 'Console bookings can only book 1 unit at a time'
+      });
+    }
 
     // Validate console type
     const validConsoleTypes = ['ps5', 'ps4', 'xbox_series_x', 'xbox_series_s', 'xbox_one', 'nintendo_switch'];
@@ -341,6 +361,17 @@ const createBooking = async (req, res) => {
         success: false,
         message: `Invalid ${typeLabel} number. Available: 1-${maxStations}`
       });
+    }
+
+    // For multiple PCs, validate that we have enough consecutive stations available
+    if (numberOfPcs > 1) {
+      if (stationNumber + numberOfPcs - 1 > maxStations) {
+        console.log('🎫 [BOOKING] ERROR: Not enough consecutive stations available');
+        return res.status(400).json({
+          success: false,
+          message: `Not enough consecutive stations available. Requested ${numberOfPcs} PCs starting from #${stationNumber}, but only ${maxStations} total stations available.`
+        });
+      }
     }
 
     // Validate booking time with midnight crossing support
@@ -437,10 +468,24 @@ const createBooking = async (req, res) => {
     console.log('🎫 [BOOKING] Total amount calculated:', totalAmount);
 
     // Use Firestore transaction to prevent race conditions
-    const bookingRef = db.collection('bookings').doc();
     console.log('🎫 [BOOKING] Starting Firestore transaction for booking creation');
     
+    // Calculate total amount for all PCs
+    const totalAmountForAllPcs = totalAmount * numberOfPcs;
+    
+    // Generate a unique groupBookingId to link all bookings in this group together
+    // This is only set when numberOfPcs > 1 (group booking)
+    const groupBookingId = numberOfPcs > 1 ? `GROUP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : null;
+    
     try {
+      const createdBookings = [];
+      const bookingRefs = [];
+      
+      // Create references for all bookings
+      for (let i = 0; i < numberOfPcs; i++) {
+        bookingRefs.push(db.collection('bookings').doc());
+      }
+      
       await db.runTransaction(async (transaction) => {
         console.log('🎫 [BOOKING] Inside transaction - checking availability...');
         // Re-check for conflicts inside transaction using transaction.get() for atomic reads
@@ -450,98 +495,116 @@ const createBooking = async (req, res) => {
         );
 
         console.log('🎫 [BOOKING] Available stations in transaction:', availableStations);
-        console.log('🎫 [BOOKING] Requested station number:', stationNumber);
-        console.log('🎫 [BOOKING] Station available?', availableStations.includes(stationNumber));
-
-        if (!availableStations.includes(stationNumber)) {
-          const typeLabel = stationType === 'pc' ? 'PC station' : `${consoleType} console`;
-          console.log('🎫 [BOOKING] CONFLICT: Station not available');
-          throw new Error(`CONFLICT:This ${typeLabel} #${stationNumber} is already booked for the selected time slot. Available: ${availableStations.length > 0 ? '#' + availableStations.join(', #') : 'None'}`);
+        console.log('🎫 [BOOKING] Requested station numbers:', Array.from({length: numberOfPcs}, (_, i) => stationNumber + i));
+        
+        // Check if all requested stations are available
+        const requestedStations = Array.from({length: numberOfPcs}, (_, i) => stationNumber + i);
+        const unavailableStations = requestedStations.filter(station => !availableStations.includes(station));
+        
+        if (unavailableStations.length > 0) {
+          const typeLabel = stationType === 'pc' ? 'PC stations' : `${consoleType} consoles`;
+          console.log('🎫 [BOOKING] CONFLICT: Some stations not available');
+          throw new Error(`CONFLICT:Some ${typeLabel} (${unavailableStations.map(s => '#' + s).join(', ')}) are already booked for the selected time slot. Available: ${availableStations.length > 0 ? '#' + availableStations.join(', #') : 'None'}`);
         }
 
-        // Create booking within transaction
-        const bookingData = {
-          userId: req.user.id,
-          cafeId,
-          stationType,
-          consoleType: stationType === 'console' ? consoleType : null,
-          stationNumber,
-          bookingDate,
-          startTime,
-          endTime,
-          durationHours,
-          hourlyRate,
-          totalAmount,
-          notes: notes || null,
-          status: 'pending', // Changed to pending - will be confirmed after payment
-          paymentStatus: 'unpaid',
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
+        // Create all bookings within transaction
+        for (let i = 0; i < numberOfPcs; i++) {
+          const currentStationNumber = stationNumber + i;
+          const bookingRef = bookingRefs[i];
+          
+          // Each booking has the same totalAmount (per PC), but we'll track the combined total
+          const bookingData = {
+            userId: req.user.id,
+            cafeId,
+            stationType,
+            consoleType: stationType === 'console' ? consoleType : null,
+            stationNumber: currentStationNumber,
+            bookingDate,
+            startTime,
+            endTime,
+            durationHours,
+            hourlyRate,
+            totalAmount, // Per PC amount
+            numberOfPcs: numberOfPcs, // Track that this is part of a group booking
+            groupBookingIndex: i + 1, // Track position in group (1, 2, 3, ...)
+            groupBookingId: groupBookingId, // Link all bookings in the group together
+            notes: notes || null,
+            status: 'pending', // Changed to pending - will be confirmed after payment
+            paymentStatus: 'unpaid',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
 
-        console.log('🎫 [BOOKING] Creating booking data:', {
-          bookingId: bookingRef.id,
-          userId: bookingData.userId,
-          cafeId: bookingData.cafeId,
-          stationType: bookingData.stationType,
-          stationNumber: bookingData.stationNumber,
-          bookingDate: bookingData.bookingDate,
-          startTime: bookingData.startTime,
-          endTime: bookingData.endTime,
-          durationHours: bookingData.durationHours,
-          totalAmount: bookingData.totalAmount,
-          status: bookingData.status,
-          paymentStatus: bookingData.paymentStatus
-        });
+          console.log('🎫 [BOOKING] Creating booking data for PC #' + currentStationNumber + ':', {
+            bookingId: bookingRef.id,
+            userId: bookingData.userId,
+            cafeId: bookingData.cafeId,
+            stationType: bookingData.stationType,
+            stationNumber: bookingData.stationNumber,
+            bookingDate: bookingData.bookingDate,
+            startTime: bookingData.startTime,
+            endTime: bookingData.endTime,
+            durationHours: bookingData.durationHours,
+            totalAmount: bookingData.totalAmount,
+            numberOfPcs: bookingData.numberOfPcs,
+            status: bookingData.status,
+            paymentStatus: bookingData.paymentStatus
+          });
 
-        transaction.set(bookingRef, bookingData);
-        console.log('🎫 [BOOKING] Booking data set in transaction');
+          transaction.set(bookingRef, bookingData);
+        }
+        
+        console.log('🎫 [BOOKING] All booking data set in transaction');
       });
 
       console.log('🎫 [BOOKING] Transaction completed successfully');
       
-      // Fetch booking with details
-      console.log('🎫 [BOOKING] Fetching created booking:', bookingRef.id);
-      const bookingDoc = await bookingRef.get();
-      const bookingData = bookingDoc.data();
+      // Fetch all created bookings with details
+      console.log('🎫 [BOOKING] Fetching created bookings...');
+      const bookingDocs = await Promise.all(bookingRefs.map(ref => ref.get()));
       
       console.log('🎫 [BOOKING] Fetching cafe and user data...');
       const cafeData = await getCafeData(cafeId);
       const userData = await getUserData(req.user.id);
 
-      const booking = {
-        id: bookingDoc.id,
-        ...bookingData,
-        createdAt: bookingData.createdAt?.toDate ? bookingData.createdAt.toDate().toISOString() : bookingData.createdAt,
-        updatedAt: bookingData.updatedAt?.toDate ? bookingData.updatedAt.toDate().toISOString() : bookingData.updatedAt,
-        cafe: cafeData ? {
-          id: cafeData.id,
-          name: cafeData.name,
-          address: cafeData.address,
-          city: cafeData.city
-        } : null,
-        user: userData ? {
-          id: userData.id,
-          name: userData.name,
-          email: userData.email
-        } : null
-      };
+      // Process all bookings
+      for (const bookingDoc of bookingDocs) {
+        const bookingData = bookingDoc.data();
+        const booking = {
+          id: bookingDoc.id,
+          ...bookingData,
+          createdAt: bookingData.createdAt?.toDate ? bookingData.createdAt.toDate().toISOString() : bookingData.createdAt,
+          updatedAt: bookingData.updatedAt?.toDate ? bookingData.updatedAt.toDate().toISOString() : bookingData.updatedAt,
+          cafe: cafeData ? {
+            id: cafeData.id,
+            name: cafeData.name,
+            address: cafeData.address,
+            city: cafeData.city
+          } : null,
+          user: userData ? {
+            id: userData.id,
+            name: userData.name,
+            email: userData.email
+          } : null
+        };
+        createdBookings.push(booking);
+      }
 
-      // Create community post (show booking activity in community feed)
+      // Create community post for the first booking (representative of the group)
       console.log('🎫 [BOOKING] Creating community post...');
       try {
-        await createCommunityPost(booking, cafeData, userData);
+        await createCommunityPost(createdBookings[0], cafeData, userData);
         console.log('🎫 [BOOKING] Community post created successfully');
       } catch (communityError) {
         // Don't fail booking if community post fails
         console.error('🎫 [BOOKING] Failed to create community post:', communityError);
       }
 
-      // Send notification to cafe owner
+      // Send notification to cafe owner (for the group booking)
       console.log('🎫 [BOOKING] Sending notification to cafe owner...');
       try {
         await notificationService.sendBookingNotification(
-          booking,
+          createdBookings[0],
           cafeData,
           userData
         );
@@ -551,24 +614,35 @@ const createBooking = async (req, res) => {
         console.error('🎫 [BOOKING] Failed to send notification:', notificationError);
       }
 
-      console.log('🎫 [BOOKING] ✅ BOOKING CREATED SUCCESSFULLY');
-      console.log('🎫 [BOOKING] Booking ID:', booking.id);
-      console.log('🎫 [BOOKING] Total Amount:', totalAmount);
-      console.log('🎫 [BOOKING] Status:', booking.status);
-      console.log('🎫 [BOOKING] Payment Status:', booking.paymentStatus);
+      console.log('🎫 [BOOKING] ✅ BOOKINGS CREATED SUCCESSFULLY');
+      console.log('🎫 [BOOKING] Number of bookings:', createdBookings.length);
+      console.log('🎫 [BOOKING] Total Amount (all PCs):', totalAmountForAllPcs);
       console.log('🎫 [BOOKING] ========================================');
 
+      // Update the primary booking's totalAmount to reflect the total for all PCs
+      // This is the amount that will be charged for the entire group booking
+      const primaryBooking = {
+        ...createdBookings[0],
+        totalAmount: totalAmountForAllPcs // Use the combined total for payment
+      };
+
+      // Return the first booking as primary (for payment), but include all booking IDs
       res.status(201).json({
         success: true,
-        message: 'Booking confirmed successfully',
+        message: numberOfPcs > 1 
+          ? `${numberOfPcs} bookings created successfully` 
+          : 'Booking confirmed successfully',
         data: {
-          booking,
+          booking: primaryBooking, // Primary booking for payment (with total for all PCs)
+          bookings: createdBookings, // All bookings
+          stationNumbers: createdBookings.map(b => b.stationNumber), // All station numbers
           billing: {
             stationType,
             consoleType: stationType === 'console' ? consoleType : null,
             durationHours,
             hourlyRate,
-            totalAmount
+            totalAmount: totalAmountForAllPcs, // Combined total for all PCs
+            numberOfPcs: numberOfPcs
           }
         }
       });
@@ -965,9 +1039,60 @@ const getBookingById = async (req, res) => {
       phone: userData.phone
     } : null;
 
+    // If this is a group booking, fetch all bookings in the group
+    let groupBookings = null;
+    if (booking.groupBookingId) {
+      console.log('🔍 [GET_BOOKING] Group booking detected. groupBookingId:', booking.groupBookingId);
+      let groupBookingsQuery;
+      try {
+        // Try with orderBy first (requires composite index)
+        groupBookingsQuery = await db.collection('bookings')
+          .where('groupBookingId', '==', booking.groupBookingId)
+          .orderBy('groupBookingIndex', 'asc')
+          .get();
+        console.log('🔍 [GET_BOOKING] Found', groupBookingsQuery.docs.length, 'bookings in group (with orderBy)');
+      } catch (indexError) {
+        console.log('🔍 [GET_BOOKING] Index error, trying without orderBy:', indexError.message);
+        // Fallback: Query without orderBy and sort client-side
+        groupBookingsQuery = await db.collection('bookings')
+          .where('groupBookingId', '==', booking.groupBookingId)
+          .get();
+        console.log('🔍 [GET_BOOKING] Found', groupBookingsQuery.docs.length, 'bookings in group (without orderBy)');
+      }
+
+      groupBookings = groupBookingsQuery.docs.map(doc => {
+        const groupBookingData = doc.data();
+        return {
+          id: doc.id,
+          ...groupBookingData,
+          createdAt: groupBookingData.createdAt?.toDate ? groupBookingData.createdAt.toDate().toISOString() : groupBookingData.createdAt,
+          updatedAt: groupBookingData.updatedAt?.toDate ? groupBookingData.updatedAt.toDate().toISOString() : groupBookingData.updatedAt,
+          cafe: booking.cafe,
+          user: booking.user
+        };
+      });
+
+      console.log('🔍 [GET_BOOKING] Processed', groupBookings.length, 'group bookings');
+
+      // Sort client-side if orderBy wasn't used or if we want to ensure proper ordering
+      if (groupBookings.length > 0 && groupBookings[0].groupBookingIndex != null) {
+        groupBookings.sort((a, b) => {
+          const indexA = a.groupBookingIndex ?? 0;
+          const indexB = b.groupBookingIndex ?? 0;
+          return indexA - indexB;
+        });
+        console.log('🔍 [GET_BOOKING] Sorted group bookings by index');
+      }
+    } else {
+      console.log('🔍 [GET_BOOKING] Not a group booking (no groupBookingId)');
+    }
+
     res.json({
       success: true,
-      data: { booking }
+      data: { 
+        booking,
+        groupBookings: groupBookings || null
+      }
     });
   } catch (error) {
     console.error('Get booking error:', error);

@@ -30,6 +30,12 @@ const cafeValidation = [
     .trim()
     .notEmpty().withMessage('Google Maps link is required')
     .isURL().withMessage('Please provide a valid URL'),
+  body('phoneNumber')
+    .trim()
+    .notEmpty().withMessage('Cafe phone number is required')
+    .matches(/^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/)
+    .withMessage('Please provide a valid phone number')
+    .isLength({ min: 10, max: 15 }).withMessage('Phone number must be between 10 and 15 digits'),
   body('latitude')
     .notEmpty().withMessage('Latitude is required')
     .isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),

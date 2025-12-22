@@ -85,8 +85,40 @@ class MyBookingsScreen extends ConsumerWidget {
             );
           }
 
-          final upcoming = response.categorized?.upcoming ?? [];
-          final past = response.categorized?.past ?? [];
+          // Sort bookings by status: pending (top), confirmed (middle), cancelled (bottom)
+          final allBookings = List<Booking>.from(response.bookings);
+          allBookings.sort((a, b) {
+            // Define status priority: pending = 0, confirmed = 1, cancelled = 2, others = 3
+            int getStatusPriority(String status) {
+              switch (status.toLowerCase()) {
+                case 'pending':
+                  return 0;
+                case 'confirmed':
+                  return 1;
+                case 'cancelled':
+                  return 2;
+                default:
+                  return 3;
+              }
+            }
+            
+            final priorityA = getStatusPriority(a.status);
+            final priorityB = getStatusPriority(b.status);
+            
+            // First sort by status priority
+            if (priorityA != priorityB) {
+              return priorityA.compareTo(priorityB);
+            }
+            
+            // If same status, sort by booking date (most recent first)
+            final dateCompare = b.bookingDate.compareTo(a.bookingDate);
+            if (dateCompare != 0) {
+              return dateCompare;
+            }
+            
+            // If same date, sort by start time (most recent first)
+            return b.startTime.compareTo(a.startTime);
+          });
 
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(myBookingsProvider),
@@ -99,21 +131,10 @@ class MyBookingsScreen extends ConsumerWidget {
                 bottom: MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav
               ),
               children: [
-                if (upcoming.isNotEmpty) ...[
-                  const _SectionHeader(title: 'Upcoming'),
-                  ...upcoming.map((b) => _BookingCard(
-                    booking: b,
-                    onCancel: () => _showCancelDialog(context, ref, b),
-                  )),
-                ],
-                if (past.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  const _SectionHeader(title: 'Past'),
-                  ...past.map((b) => _BookingCard(
-                    booking: b,
-                    onCancel: () => _showCancelDialog(context, ref, b),
-                  )),
-                ],
+                ...allBookings.map((b) => _BookingCard(
+                  booking: b,
+                  onCancel: () => _showCancelDialog(context, ref, b),
+                )),
               ],
             ),
           );
@@ -124,27 +145,6 @@ class MyBookingsScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(myBookingsProvider),
         ),
       ),
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-
-  const _SectionHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
       ),
     );
   }

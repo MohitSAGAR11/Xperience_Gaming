@@ -13,6 +13,7 @@ class Cafe {
   final double latitude;
   final double longitude;
   final String mapsLink;
+  final String phoneNumber; // Cafe phone number (required)
   final double hourlyRate;
   final String openingTime;
   final String closingTime;
@@ -41,6 +42,7 @@ class Cafe {
     required this.latitude,
     required this.longitude,
     required this.mapsLink,
+    required this.phoneNumber,
     required this.hourlyRate,
     required this.openingTime,
     required this.closingTime,
@@ -76,6 +78,7 @@ class Cafe {
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
       mapsLink: json['mapsLink'] ?? '',
+      phoneNumber: json['phoneNumber'] ?? '',
       hourlyRate: _parseDouble(json['hourlyRate']),
       openingTime: json['openingTime'] ?? '09:00:00',
       closingTime: json['closingTime'] ?? '23:00:00',
@@ -111,6 +114,7 @@ class Cafe {
       'latitude': latitude,
       'longitude': longitude,
       'mapsLink': mapsLink,
+      'phoneNumber': phoneNumber,
       'hourlyRate': hourlyRate,
       'openingTime': openingTime,
       'closingTime': closingTime,

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../widgets/custom_button.dart';
+import '../../../core/utils.dart';
 
 /// Client Profile Screen
 class ClientProfileScreen extends ConsumerWidget {
@@ -73,6 +75,22 @@ class ClientProfileScreen extends ConsumerWidget {
               icon: Icons.help_outline,
               title: 'Help & Support',
               onTap: () => context.push(Routes.helpSupport),
+            ),
+            _ProfileMenuItem(
+              icon: Icons.feedback_outlined,
+              title: 'Feedback',
+              onTap: () async {
+                // Placeholder Google Form link - replace with actual form URL
+                const feedbackUrl = 'https://docs.google.com/forms/d/e/YOUR_FORM_ID/viewform';
+                final uri = Uri.parse(feedbackUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } else {
+                  if (context.mounted) {
+                    SnackbarUtils.showError(context, 'Could not open feedback form');
+                  }
+                }
+              },
             ),
             const SizedBox(height: 32),
 

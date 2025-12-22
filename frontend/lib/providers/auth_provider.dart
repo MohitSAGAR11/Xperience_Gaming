@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import '../config/constants.dart';
 import '../core/storage.dart';
 import '../core/firebase_service.dart';
@@ -52,26 +51,45 @@ class AuthNotifier extends StateNotifier<AuthState> {
   
   // Flag to prevent listener from interfering during registration
   bool _isRegistering = false;
+  // Flag to track initialization state - prevents clearing storage during app startup
+  bool _isInitializing = false;
 
   AuthNotifier(this._authService, this._storage, this._ref) : super(AuthState());
 
   /// Initialize auth state (check Firebase Auth)
   Future<void> initialize() async {
     state = state.copyWith(isLoading: true);
+    _isInitializing = true;
 
+    // FIRST: Try to restore user state from storage (persisted session)
+    // This ensures we maintain login state even if Firebase Auth hasn't restored yet
+    final storedUser = _storage.getUser();
+    final storedRole = _storage.getRole();
+    
     try {
+      if (storedUser != null && storedRole != null) {
+        AppLogger.d('🔐 [AUTH_INIT] Found stored user: ${storedUser.email}');
+        state = AuthState(
+          user: storedUser,
+          isAuthenticated: true,
+          isLoading: true, // Still loading to verify with Firebase
+        );
+      }
+
       // Listen to Firebase Auth state changes
       // Note: This listener handles sign-out events primarily
       // Registration and login manage their own state
       FirebaseService.authStateChanges.listen((firebaseUser) async {
-        // Skip if we're in the middle of registration or already loading
-        if (_isRegistering || state.isLoading) {
-          AppLogger.d('🔐 [AUTH_LISTENER] Skipping - isRegistering=$_isRegistering, isLoading=${state.isLoading}');
+        // Skip if we're initializing, registering, or already loading
+        if (_isInitializing || _isRegistering || state.isLoading) {
+          AppLogger.d('🔐 [AUTH_LISTENER] Skipping - isInitializing=$_isInitializing, isRegistering=$_isRegistering, isLoading=${state.isLoading}');
           return;
         }
         AppLogger.d('🔐 [AUTH_LISTENER] Auth state changed: user=${firebaseUser?.uid ?? "null"}');
         
-        if (firebaseUser == null) {
+        // Only clear storage if user was authenticated and now Firebase user is null
+        // This means user actually signed out, not just app restart
+        if (firebaseUser == null && state.isAuthenticated) {
           // User signed out - clear state
           AppLogger.d('🔐 [AUTH_LISTENER] User signed out, clearing state');
           await _storage.clearAll();
@@ -118,14 +136,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
           state = AuthState(isLoading: false);
         }
       } else {
-        AppLogger.d('🔐 [AUTH_INIT] No Firebase user found');
-        state = AuthState(isLoading: false);
+        // No Firebase user found
+        // If we have stored user data, keep it - Firebase Auth might still be restoring
+        // The listener will handle actual sign-outs
+        if (storedUser != null && storedRole != null) {
+          AppLogger.d('🔐 [AUTH_INIT] No Firebase user but stored user exists - keeping stored session');
+          // Keep the stored user state - Firebase Auth might restore later
+          state = AuthState(
+            user: storedUser,
+            isAuthenticated: true,
+            isLoading: false,
+          );
+        } else {
+          AppLogger.d('🔐 [AUTH_INIT] No Firebase user and no stored user');
+          state = AuthState(isLoading: false);
+        }
       }
     } catch (e) {
       AppLogger.e('🔐 [AUTH_INIT] Error', e);
-      await FirebaseService.auth.signOut();
-      await _storage.clearAll();
+      // Only sign out and clear if it's a critical error
+      // Don't clear on network errors if we have stored user
+      if (storedUser == null) {
+        await FirebaseService.auth.signOut();
+        await _storage.clearAll();
+      }
       state = AuthState(isLoading: false, error: e.toString());
+    } finally {
+      // Mark initialization as complete
+      _isInitializing = false;
     }
   }
 
