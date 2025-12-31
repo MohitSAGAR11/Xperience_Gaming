@@ -27,6 +27,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     if (!mounted) return;
     
     if (success) {
+      // Ensure profile is refreshed one more time before navigation to get absolute latest data
+      await authNotifier.refreshProfile();
+      
       final authState = ref.read(authProvider);
       // Navigate based on user role
       if (authState.isOwner) {

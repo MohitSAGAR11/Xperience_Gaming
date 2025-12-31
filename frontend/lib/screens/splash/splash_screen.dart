@@ -45,14 +45,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // Wait for animation to complete
     await Future.delayed(const Duration(seconds: 2));
 
-    // Initialize auth state (but don't wait for it to complete)
-    // This allows the splash screen to show briefly then navigate
-    ref.read(authProvider.notifier).initialize();
+    if (!mounted) return;
+
+    // Initialize auth state and wait for it to complete
+    // This ensures we have the correct auth state (no dummy accounts)
+    await ref.read(authProvider.notifier).initialize();
 
     if (!mounted) return;
 
-    // Navigate immediately - don't wait for auth initialization
-    // The auth screen will handle showing loading state if needed
+    // Now check auth state after initialization is complete
     final authState = ref.read(authProvider);
     
     if (authState.isAuthenticated) {

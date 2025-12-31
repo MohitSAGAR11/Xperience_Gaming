@@ -67,13 +67,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final storedRole = _storage.getRole();
     
     try {
+      // Don't restore stored user data here - wait for Firebase Auth to confirm
+      // This prevents showing stale/dummy accounts when user is actually signed out
       if (storedUser != null && storedRole != null) {
-        AppLogger.d('🔐 [AUTH_INIT] Found stored user: ${storedUser.email}');
-        state = AuthState(
-          user: storedUser,
-          isAuthenticated: true,
-          isLoading: true, // Still loading to verify with Firebase
-        );
+        AppLogger.d('🔐 [AUTH_INIT] Found stored user data, but waiting for Firebase Auth confirmation...');
       }
 
       // Listen to Firebase Auth state changes
@@ -117,6 +114,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         
         if (response.success && response.user != null) {
           AppLogger.d('🔐 [AUTH_INIT] Profile fetched successfully');
+          AppLogger.d('🔐 [AUTH_INIT] User verified status: ${response.user!.verified}');
+          AppLogger.d('🔐 [AUTH_INIT] User role: ${response.user!.role}');
+          
           await _storage.saveUser(response.user!);
           await _storage.saveRole(response.user!.role);
           state = AuthState(
@@ -136,31 +136,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
           state = AuthState(isLoading: false);
         }
       } else {
-        // No Firebase user found
-        // If we have stored user data, keep it - Firebase Auth might still be restoring
-        // The listener will handle actual sign-outs
-        if (storedUser != null && storedRole != null) {
-          AppLogger.d('🔐 [AUTH_INIT] No Firebase user but stored user exists - keeping stored session');
-          // Keep the stored user state - Firebase Auth might restore later
-          state = AuthState(
-            user: storedUser,
-            isAuthenticated: true,
-            isLoading: false,
-          );
-        } else {
-          AppLogger.d('🔐 [AUTH_INIT] No Firebase user and no stored user');
-          state = AuthState(isLoading: false);
+        // No Firebase user found - user is signed out
+        // Clear any stored user data to prevent showing stale/dummy accounts
+        AppLogger.d('🔐 [AUTH_INIT] No Firebase user found - user is signed out');
+        if (storedUser != null || storedRole != null) {
+          AppLogger.w('🔐 [AUTH_INIT] Found stale stored user data - clearing it');
+          await _storage.clearAll();
         }
+        state = AuthState(isLoading: false);
       }
     } catch (e) {
       AppLogger.e('🔐 [AUTH_INIT] Error', e);
-      // Only sign out and clear if it's a critical error
-      // Don't clear on network errors if we have stored user
-      if (storedUser == null) {
+      // If there's no Firebase user, clear all stored data (user is signed out)
+      final firebaseUser = FirebaseService.currentUser;
+      if (firebaseUser == null) {
+        AppLogger.w('🔐 [AUTH_INIT] No Firebase user during error - clearing stored data');
         await FirebaseService.auth.signOut();
         await _storage.clearAll();
+        state = AuthState(isLoading: false, error: e.toString());
+      } else {
+        // Firebase user exists but error occurred - keep state but show error
+        // Don't clear storage as user is still authenticated
+        state = AuthState(isLoading: false, error: e.toString());
       }
-      state = AuthState(isLoading: false, error: e.toString());
     } finally {
       // Mark initialization as complete
       _isInitializing = false;
@@ -232,11 +230,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       if (response.success && response.user != null) {
-        await _storage.saveUser(response.user!);
-        await _storage.saveRole(response.user!.role);
+        AppLogger.d('🔐 [LOGIN] User profile received - verified: ${response.user!.verified}, role: ${response.user!.role}');
+        
+        // Always refresh profile after login to get latest data from Firestore
+        // This ensures we have the most up-to-date verification status and other fields
+        AppLogger.d('🔐 [LOGIN] Refreshing profile to get latest data from Firestore...');
+        final refreshResponse = await _authService.getProfile();
+        
+        // Use refreshed data if available, otherwise fall back to initial response
+        final userToSave = refreshResponse.success && refreshResponse.user != null 
+            ? refreshResponse.user! 
+            : response.user!;
+        
+        AppLogger.d('🔐 [LOGIN] Final user profile - verified: ${userToSave.verified}, role: ${userToSave.role}');
+        
+        await _storage.saveUser(userToSave);
+        await _storage.saveRole(userToSave.role);
 
         state = AuthState(
-          user: response.user,
+          user: userToSave,
           isAuthenticated: true,
           isLoading: false,
         );
@@ -353,11 +365,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final response = await _authService.signInWithGoogle(role: role);
 
       if (response.success && response.user != null) {
-        await _storage.saveUser(response.user!);
-        await _storage.saveRole(response.user!.role);
+        AppLogger.d('🔐 [GOOGLE_SIGNIN] User profile received - verified: ${response.user!.verified}, role: ${response.user!.role}');
+        
+        // Always refresh profile after sign-in to get latest data from Firestore
+        // This ensures we have the most up-to-date verification status and other fields
+        AppLogger.d('🔐 [GOOGLE_SIGNIN] Refreshing profile to get latest data from Firestore...');
+        final refreshResponse = await _authService.getProfile();
+        
+        // Use refreshed data if available, otherwise fall back to initial response
+        final userToSave = refreshResponse.success && refreshResponse.user != null 
+            ? refreshResponse.user! 
+            : response.user!;
+        
+        AppLogger.d('🔐 [GOOGLE_SIGNIN] Final user profile - verified: ${userToSave.verified}, role: ${userToSave.role}');
+        
+        await _storage.saveUser(userToSave);
+        await _storage.saveRole(userToSave.role);
 
         state = AuthState(
-          user: response.user,
+          user: userToSave,
           isAuthenticated: true,
           isLoading: false,
         );
@@ -395,6 +421,52 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       AppLogger.e('📬 [AUTH] Error initializing notifications', e);
       // Don't fail authentication if notifications fail
+    }
+  }
+
+  /// Refresh user profile from backend
+  /// This is useful when user data might have changed (e.g., verification status)
+  Future<bool> refreshProfile() async {
+    if (!state.isAuthenticated) {
+      AppLogger.w('🔐 [AUTH_REFRESH] Cannot refresh - user not authenticated');
+      return false;
+    }
+
+    try {
+      AppLogger.d('🔐 [AUTH_REFRESH] Refreshing user profile...');
+      final response = await _authService.getProfile().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          AppLogger.w('🔐 [AUTH_REFRESH] Profile refresh timed out');
+          throw Exception('Profile refresh timed out');
+        },
+      );
+
+      if (response.success && response.user != null) {
+        AppLogger.d('🔐 [AUTH_REFRESH] Profile refreshed successfully');
+        AppLogger.d('🔐 [AUTH_REFRESH] Verified status: ${response.user!.verified}');
+        AppLogger.d('🔐 [AUTH_REFRESH] Verified type: ${response.user!.verified.runtimeType}');
+        AppLogger.d('🔐 [AUTH_REFRESH] Is verified owner: ${response.user!.isVerifiedOwner}');
+        
+        await _storage.saveUser(response.user!);
+        await _storage.saveRole(response.user!.role);
+        
+        // CRITICAL: Update state with new user data to trigger UI rebuild
+        state = state.copyWith(
+          user: response.user,
+        );
+        
+        // Force a rebuild by invalidating the provider
+        // This ensures all widgets watching currentUserProvider get the updated data
+        AppLogger.d('🔐 [AUTH_REFRESH] State updated, triggering UI rebuild');
+        return true;
+      } else {
+        AppLogger.w('🔐 [AUTH_REFRESH] Failed to refresh profile: ${response.message}');
+        return false;
+      }
+    } catch (e) {
+      AppLogger.e('🔐 [AUTH_REFRESH] Error refreshing profile', e);
+      return false;
     }
   }
 

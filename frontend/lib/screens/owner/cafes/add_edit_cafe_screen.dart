@@ -54,7 +54,10 @@ class _AddEditCafeScreenState extends ConsumerState<AddEditCafeScreen> {
     
     // Check verification status for new cafes
     if (!isEditing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        // Refresh user profile to get latest verification status
+        await ref.read(authProvider.notifier).refreshProfile();
+        
         final user = ref.read(currentUserProvider);
         if (user != null && user.isOwner && !user.isVerifiedOwner) {
           context.go(Routes.verificationPending);

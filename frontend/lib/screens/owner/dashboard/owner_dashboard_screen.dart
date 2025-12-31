@@ -11,11 +11,27 @@ import '../../../widgets/loading_widget.dart';
 import '../../../widgets/custom_button.dart';
 
 /// Owner Dashboard Screen
-class OwnerDashboardScreen extends ConsumerWidget {
+class OwnerDashboardScreen extends ConsumerStatefulWidget {
   const OwnerDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OwnerDashboardScreen> createState() => _OwnerDashboardScreenState();
+}
+
+class _OwnerDashboardScreenState extends ConsumerState<OwnerDashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh user profile and cafes when screen loads to get latest data
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(authProvider.notifier).refreshProfile();
+      // Invalidate cafes provider to fetch fresh data
+      ref.invalidate(myCafesProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final cafesAsync = ref.watch(myCafesProvider);
 
@@ -23,7 +39,11 @@ class OwnerDashboardScreen extends ConsumerWidget {
       backgroundColor: AppColors.trueBlack,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () async => ref.invalidate(myCafesProvider),
+          onRefresh: () async {
+            // Refresh both cafes and user profile
+            await ref.read(authProvider.notifier).refreshProfile();
+            ref.invalidate(myCafesProvider);
+          },
           color: AppColors.cyberCyan,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),

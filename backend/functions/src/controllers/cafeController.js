@@ -90,6 +90,7 @@ const createCafe = async (req, res) => {
       ...req.body,
       ownerId: req.user.id,
       isActive: true,
+      isAcceptingBookings: req.body.isAcceptingBookings !== undefined ? req.body.isAcceptingBookings : true,
       rating: 0,
       totalReviews: 0,
       createdAt: new Date(),
@@ -400,7 +401,7 @@ const updateCafe = async (req, res) => {
       'name', 'description', 'address', 'city', 'state', 'zipCode',
       'latitude', 'longitude', 'hourlyRate', 'openingTime', 'closingTime',
       'totalPcStations', 'pcHourlyRate', 'pcSpecs', 'pcGames',
-      'photos', 'amenities', 'availableGames', 'isActive', 'mapsLink'
+      'photos', 'amenities', 'availableGames', 'isActive', 'isAcceptingBookings', 'mapsLink'
     ];
 
     const updateData = {

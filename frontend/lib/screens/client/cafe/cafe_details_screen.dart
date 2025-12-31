@@ -81,6 +81,54 @@ class CafeDetailsScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Not Accepting Bookings Banner
+                      if (!cafe.isAcceptingBookings)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 20),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.error.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: AppColors.error,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Not Accepting Bookings',
+                                      style: TextStyle(
+                                        color: AppColors.error,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'This cafe is currently not taking bookings. Please check back later.',
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       // Name and Rating
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -376,38 +424,68 @@ class CafeDetailsScreen extends ConsumerWidget {
                   ],
                 ),
                 child: SafeArea(
-                  child: Row(
-                    children: [
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Starting from',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
+                  child: cafe.isAcceptingBookings
+                      ? Row(
+                          children: [
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Starting from',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  '${CurrencyUtils.formatINR(cafe.hourlyRate)}/hr',
+                                  style: const TextStyle(
+                                    color: AppColors.cyberCyan,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: GlowButton(
+                                text: 'BOOK NOW',
+                                onPressed: () => context.push('/client/cafe/${cafe.id}/book'),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.error.withOpacity(0.3),
                             ),
                           ),
-                          Text(
-                            '${CurrencyUtils.formatINR(cafe.hourlyRate)}/hr',
-                            style: const TextStyle(
-                              color: AppColors.cyberCyan,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.cancel_outlined,
+                                color: AppColors.error,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Not Accepting Bookings',
+                                style: TextStyle(
+                                  color: AppColors.error,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: GlowButton(
-                          text: 'BOOK NOW',
-                          onPressed: () => context.push('/client/cafe/${cafe.id}/book'),
                         ),
-                      ),
-                    ],
-                  ),
                 ),
               )
             : null,

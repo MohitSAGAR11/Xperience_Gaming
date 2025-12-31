@@ -348,6 +348,7 @@ class AuthService {
           'isNewUser': isNewUser,
           'name': firebaseUser.displayName,
           'email': firebaseUser.email,
+          'avatar': firebaseUser.photoURL, // Include Google profile picture
         },
       );
       

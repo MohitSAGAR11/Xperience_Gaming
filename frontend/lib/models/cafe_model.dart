@@ -25,6 +25,7 @@ class Cafe {
   final List<String> amenities;
   final List<String> availableGames;
   final bool isActive;
+  final bool isAcceptingBookings; // Whether cafe is currently accepting bookings
   final double rating;
   final int totalReviews;
   final double? distance; // Only when fetching nearby cafes
@@ -54,6 +55,7 @@ class Cafe {
     this.amenities = const [],
     this.availableGames = const [],
     this.isActive = true,
+    this.isAcceptingBookings = true,
     this.rating = 0,
     this.totalReviews = 0,
     this.distance,
@@ -94,6 +96,7 @@ class Cafe {
       amenities: _parseStringList(json['amenities']),
       availableGames: _parseStringList(json['availableGames']),
       isActive: json['isActive'] ?? true,
+      isAcceptingBookings: json['isAcceptingBookings'] ?? true,
       rating: _parseDouble(json['rating']),
       totalReviews: json['totalReviews'] ?? 0,
       distance: json['distance'] != null ? _parseDouble(json['distance']) : null,
@@ -126,6 +129,7 @@ class Cafe {
       'amenities': amenities,
       'availableGames': availableGames,
       'isActive': isActive,
+      'isAcceptingBookings': isAcceptingBookings,
     };
   }
 

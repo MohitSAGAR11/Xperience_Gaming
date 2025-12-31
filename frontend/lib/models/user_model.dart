@@ -22,14 +22,40 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
+    // CRITICAL: Parse verified field correctly - handle boolean, string, int, null, undefined
+    // Firestore might return boolean true/false, string "true"/"false", int 1/0, or null/undefined
+    bool? verified;
+    final role = json['role'] ?? 'client';
+    
+    if (role == 'owner') {
+      // For owners, verified should be a boolean
+      final verifiedValue = json['verified'];
+      if (verifiedValue == null) {
+        verified = false; // Default to false if null/undefined
+      } else if (verifiedValue is bool) {
+        verified = verifiedValue;
+      } else if (verifiedValue is String) {
+        verified = verifiedValue.toLowerCase() == 'true';
+      } else if (verifiedValue is int) {
+        verified = verifiedValue == 1;
+      } else if (verifiedValue is num) {
+        verified = verifiedValue.toInt() == 1;
+      } else {
+        verified = false; // Default to false for any other type
+      }
+    } else {
+      // For clients, verified should be null/undefined
+      verified = null;
+    }
+    
     return User(
       id: json['id'] ?? '',
       name: json['name'] ?? '',
       email: json['email'] ?? '',
-      role: json['role'] ?? 'client',
+      role: role,
       phone: json['phone'],
       avatar: json['avatar'],
-      verified: json['verified'], // null for clients, boolean for owners
+      verified: verified, // null for clients, boolean for owners
       createdAt: _parseTimestamp(json['createdAt']) ?? DateTime.now(),
       updatedAt: _parseTimestamp(json['updatedAt']) ?? DateTime.now(),
     );

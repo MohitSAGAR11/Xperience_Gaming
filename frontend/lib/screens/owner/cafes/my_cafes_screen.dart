@@ -7,15 +7,30 @@ import '../../../config/routes.dart';
 import '../../../core/utils.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/cafe_provider.dart';
+import '../../../services/cafe_service.dart';
 import '../../../widgets/loading_widget.dart';
 import '../../../widgets/custom_button.dart';
 
 /// My Cafes Screen (Owner)
-class MyCafesScreen extends ConsumerWidget {
+class MyCafesScreen extends ConsumerStatefulWidget {
   const MyCafesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyCafesScreen> createState() => _MyCafesScreenState();
+}
+
+class _MyCafesScreenState extends ConsumerState<MyCafesScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh user profile when screen loads to get latest verification status
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authProvider.notifier).refreshProfile();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cafesAsync = ref.watch(myCafesProvider);
 
     return Scaffold(
@@ -57,7 +72,11 @@ class MyCafesScreen extends ConsumerWidget {
           }
 
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(myCafesProvider),
+            onRefresh: () async {
+              // Refresh both cafes and user profile
+              await ref.read(authProvider.notifier).refreshProfile();
+              ref.invalidate(myCafesProvider);
+            },
             color: AppColors.cyberCyan,
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -183,19 +202,89 @@ class MyCafesScreen extends ConsumerWidget {
                             bottom: Radius.circular(16),
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        child: Column(
                           children: [
-                            _CafeStat(
-                              icon: Icons.computer,
-                              value: cafe.totalPcStations.toString(),
-                              label: 'PCs',
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _CafeStat(
+                                  icon: Icons.computer,
+                                  value: cafe.totalPcStations.toString(),
+                                  label: 'PCs',
+                                ),
+                                _CafeStat(
+                                  icon: Icons.currency_rupee,
+                                  value: CurrencyUtils.formatINR(cafe.hourlyRate)
+                                      .replaceAll('₹', ''),
+                                  label: '/hr',
+                                ),
+                              ],
                             ),
-                            _CafeStat(
-                              icon: Icons.currency_rupee,
-                              value: CurrencyUtils.formatINR(cafe.hourlyRate)
-                                  .replaceAll('₹', ''),
-                              label: '/hr',
+                            const SizedBox(height: 12),
+                            // Accepting Bookings Toggle
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.cardDark,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        cafe.isAcceptingBookings
+                                            ? Icons.check_circle
+                                            : Icons.cancel,
+                                        color: cafe.isAcceptingBookings
+                                            ? AppColors.success
+                                            : AppColors.error,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Accepting Bookings',
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Switch(
+                                    value: cafe.isAcceptingBookings,
+                                    onChanged: (value) async {
+                                      final cafeService = ref.read(cafeServiceProvider);
+                                      final response = await cafeService.updateCafe(
+                                        cafe.id,
+                                        {'isAcceptingBookings': value},
+                                      );
+                                      
+                                      if (response.success) {
+                                        ref.invalidate(myCafesProvider);
+                                        SnackbarUtils.showSuccess(
+                                          context,
+                                          value
+                                              ? 'Cafe is now accepting bookings'
+                                              : 'Cafe is no longer accepting bookings',
+                                        );
+                                      } else {
+                                        SnackbarUtils.showError(
+                                          context,
+                                          response.message,
+                                        );
+                                      }
+                                    },
+                                    activeColor: AppColors.success,
+                                    inactiveThumbColor: AppColors.error,
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),

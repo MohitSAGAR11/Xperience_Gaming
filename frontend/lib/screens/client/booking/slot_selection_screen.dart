@@ -560,6 +560,14 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen>
     AppLogger.d('📅 [SLOT_SELECTION] ========================================');
     AppLogger.d('📅 [SLOT_SELECTION] === CONFIRM BOOKING STARTED ===');
     
+    // Check if cafe is accepting bookings
+    final cafe = ref.read(cafeProvider(widget.cafeId)).valueOrNull;
+    if (cafe != null && !cafe.isAcceptingBookings) {
+      AppLogger.w('📅 [SLOT_SELECTION] ERROR: Cafe is not accepting bookings');
+      SnackbarUtils.showError(context, 'This cafe is currently not accepting bookings');
+      return;
+    }
+    
     if (_startTime == null || _endTime == null) {
       AppLogger.w('📅 [SLOT_SELECTION] ERROR: Time slot not selected');
       SnackbarUtils.showError(context, 'Please select a time slot');
@@ -1109,6 +1117,66 @@ class _SlotSelectionScreenState extends ConsumerState<SlotSelectionScreen>
         data: (cafe) {
           if (cafe == null) {
             return const ErrorDisplay(message: 'Cafe not found');
+          }
+
+          // Check if cafe is accepting bookings
+          if (!cafe.isAcceptingBookings) {
+            return Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.error.withOpacity(0.1),
+                        border: Border.all(
+                          color: AppColors.error.withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.cancel_outlined,
+                        size: 64,
+                        color: AppColors.error,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Not Accepting Bookings',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'This cafe is currently not taking bookings. Please check back later.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    GlowButton(
+                      text: 'Go Back',
+                      onPressed: () {
+                        if (!context.canPop()) {
+                          context.go(Routes.clientHome);
+                        } else {
+                          context.pop();
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           return SingleChildScrollView(

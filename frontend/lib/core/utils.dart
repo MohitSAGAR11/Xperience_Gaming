@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../config/constants.dart';
+import '../models/booking_model.dart';
 
 /// Date & Time Utilities
 class DateTimeUtils {
@@ -103,6 +104,132 @@ class DateTimeUtils {
     if (isToday(date)) return 'Today';
     if (isTomorrow(date)) return 'Tomorrow';
     return formatDateShort(date);
+  }
+
+  /// Get date header label with relative text
+  static String getDateHeaderLabel(DateTime date) {
+    if (isToday(date)) return 'Today';
+    if (isTomorrow(date)) return 'Tomorrow';
+    
+    final now = DateTime.now();
+    final daysDiff = date.difference(DateTime(now.year, now.month, now.day)).inDays;
+    
+    if (daysDiff < 7 && daysDiff > 0) {
+      // This week
+      return DateFormat('EEEE').format(date); // Monday, Tuesday, etc.
+    }
+    
+    // Format as "Mon, Dec 25, 2024"
+    return formatDate(date);
+  }
+}
+
+/// Booking Grouping Utilities
+class BookingGroupUtils {
+  /// Check if a booking is in the past (booking date + start time has passed)
+  static bool isBookingInPast(String bookingDate, String startTime) {
+    final now = DateTime.now();
+    final bookingDateTime = _getBookingDateTime(bookingDate, startTime);
+    return bookingDateTime.isBefore(now);
+  }
+  
+  /// Get DateTime from booking date and start time
+  static DateTime _getBookingDateTime(String bookingDate, String startTime) {
+    final date = DateTime.parse(bookingDate);
+    final timeParts = startTime.split(':');
+    final hour = int.tryParse(timeParts[0]) ?? 0;
+    final minute = int.tryParse(timeParts.length > 1 ? timeParts[1] : '0') ?? 0;
+    return DateTime(date.year, date.month, date.day, hour, minute);
+  }
+  
+  // Expose for use in screens
+  static DateTime getBookingDateTime(String bookingDate, String startTime) {
+    return _getBookingDateTime(bookingDate, startTime);
+  }
+  
+  /// Sort bookings: upcoming first, past last
+  /// Within each group: sort by date (ascending for upcoming, descending for past), then by time
+  static List<Booking> sortBookings(List<Booking> bookings) {
+    final now = DateTime.now();
+    final upcoming = <Booking>[];
+    final past = <Booking>[];
+    
+    // Separate upcoming and past bookings
+    for (final booking in bookings) {
+      final bookingDateTime = _getBookingDateTime(booking.bookingDate, booking.startTime);
+      if (bookingDateTime.isBefore(now)) {
+        past.add(booking);
+      } else {
+        upcoming.add(booking);
+      }
+    }
+    
+    // Sort upcoming: by date (ascending), then by start time (ascending)
+    upcoming.sort((a, b) {
+      final dateCompare = a.bookingDate.compareTo(b.bookingDate);
+      if (dateCompare != 0) return dateCompare;
+      return a.startTime.compareTo(b.startTime);
+    });
+    
+    // Sort past: by date (descending - most recent first), then by start time (descending)
+    past.sort((a, b) {
+      final dateCompare = b.bookingDate.compareTo(a.bookingDate);
+      if (dateCompare != 0) return dateCompare;
+      return b.startTime.compareTo(a.startTime);
+    });
+    
+    // Return upcoming first, then past
+    return [...upcoming, ...past];
+  }
+  
+  /// Group bookings by date
+  /// Returns a map where key is the date string and value is list of bookings for that date
+  /// Bookings are sorted: upcoming first, past last
+  static Map<String, List<T>> groupByDate<T>(List<T> bookings, String Function(T) getDateString) {
+    final Map<String, List<T>> grouped = {};
+    
+    for (final booking in bookings) {
+      final dateStr = getDateString(booking);
+      if (!grouped.containsKey(dateStr)) {
+        grouped[dateStr] = [];
+      }
+      grouped[dateStr]!.add(booking);
+    }
+    
+    // Sort dates: upcoming first (ascending), then past (descending)
+    // A date is "past" if it's strictly before today (not including today)
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final sortedEntries = grouped.entries.toList()
+      ..sort((a, b) {
+        final dateA = DateTime.parse(a.key);
+        final dateB = DateTime.parse(b.key);
+        final dateAOnly = DateTime(dateA.year, dateA.month, dateA.day);
+        final dateBOnly = DateTime(dateB.year, dateB.month, dateB.day);
+        
+        final isPastA = dateAOnly.isBefore(today);
+        final isPastB = dateBOnly.isBefore(today);
+        
+        // If one is past and one is upcoming/today, upcoming comes first
+        if (isPastA && !isPastB) return 1;
+        if (!isPastA && isPastB) return -1;
+        
+        // Both are upcoming/today: ascending order (earliest first)
+        if (!isPastA && !isPastB) {
+          return dateA.compareTo(dateB);
+        }
+        
+        // Both are past: descending order (most recent first)
+        return dateB.compareTo(dateA);
+      });
+    
+    return Map.fromEntries(sortedEntries);
+  }
+  
+  /// Get date header display text with count
+  static String getDateHeaderWithCount(DateTime date, int count) {
+    final label = DateTimeUtils.getDateHeaderLabel(date);
+    return '$label ($count ${count == 1 ? 'booking' : 'bookings'})';
   }
 }
 

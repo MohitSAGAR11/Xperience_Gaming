@@ -167,6 +167,30 @@ const protect = async (req, res, next) => {
     const userData = userDoc.data();
     console.log('🔐 [AUTH_MIDDLEWARE] User authenticated! Role:', userData.role);
     
+    // CRITICAL: Validate email matches between token and Firestore
+    // This prevents attaching wrong user data if Firestore document is corrupted
+    const tokenEmail = decodedToken.email;
+    const firestoreEmail = userData.email;
+    
+    if (tokenEmail && firestoreEmail && tokenEmail.toLowerCase() !== firestoreEmail.toLowerCase()) {
+      console.error('🔐 [AUTH_MIDDLEWARE] EMAIL MISMATCH DETECTED!');
+      console.error('🔐 [AUTH_MIDDLEWARE] Token email:', tokenEmail);
+      console.error('🔐 [AUTH_MIDDLEWARE] Firestore email:', firestoreEmail);
+      console.error('🔐 [AUTH_MIDDLEWARE] User ID:', decodedToken.uid);
+      console.error('🔐 [AUTH_MIDDLEWARE] This indicates data corruption - updating Firestore with correct email from token');
+      
+      // Update Firestore document with correct email from token
+      await db.collection('users').doc(decodedToken.uid).update({
+        email: tokenEmail,
+        updatedAt: new Date()
+      });
+      
+      // Update userData with corrected email
+      userData.email = tokenEmail;
+      
+      console.log('🔐 [AUTH_MIDDLEWARE] Firestore document updated with correct email');
+    }
+    
     // 8. Attach user info to request
     req.user = {
       id: decodedToken.uid,
