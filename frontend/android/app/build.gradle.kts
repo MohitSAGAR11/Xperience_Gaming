@@ -10,7 +10,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.xperience_gaming"
+    namespace = "com.xperiencegaming.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -27,8 +27,8 @@ android {
     defaultConfig {
         applicationId = "com.xperiencegaming.app"
         minSdk = flutter.minSdkVersion
-        targetSdk = 34
-        versionCode = 1
+        targetSdk = 35
+        versionCode = 2
         versionName = "1.0.0"
     }
 
@@ -50,6 +50,7 @@ android {
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

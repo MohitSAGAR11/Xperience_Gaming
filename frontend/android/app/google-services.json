@@ -41,6 +41,43 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:180127542:android:aa4ac6d3e0d5523aa1d597",
+        "android_client_info": {
+          "package_name": "com.xperiencegaming.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "180127542-3jj3qhak5c3tacn59srtv7a2p2gi52fs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.xperiencegaming.app",
+            "certificate_hash": "59920c0c612655aa9a6b4b1dbeb66d5862b5abc8"
+          }
+        },
+        {
+          "client_id": "180127542-8itp58lc8epvmv6iabicrabvmvepudk9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUbS86rGV0rM1CxRcD3TAPik2nHYhaK0U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "180127542-8itp58lc8epvmv6iabicrabvmvepudk9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

@@ -17,3 +17,8 @@
 # Cashfree
 -keep class com.cashfree.** { *; }
 
+# Play Core (optional - for deferred components)
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.tasks.**
+-dontwarn com.google.android.play.core.splitcompat.**
+
