@@ -470,6 +470,43 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Delete user account
+  Future<bool> deleteAccount() async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      AppLogger.d('🗑️ [DELETE_ACCOUNT] Starting account deletion...');
+      
+      final response = await _authService.deleteAccount();
+
+      if (response.success) {
+        AppLogger.d('🗑️ [DELETE_ACCOUNT] Account deleted successfully');
+        
+        // Clear all stored data
+        await _storage.clearAll();
+        
+        // Reset state
+        state = AuthState(isLoading: false);
+        
+        return true;
+      } else {
+        AppLogger.e('🗑️ [DELETE_ACCOUNT] Failed: ${response.message}');
+        state = state.copyWith(
+          isLoading: false,
+          error: response.message ?? 'Failed to delete account',
+        );
+        return false;
+      }
+    } catch (e) {
+      AppLogger.e('🗑️ [DELETE_ACCOUNT] Error', e);
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+      return false;
+    }
+  }
+
   /// Clear error
   void clearError() {
     state = state.copyWith(error: null);

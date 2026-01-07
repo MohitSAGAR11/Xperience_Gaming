@@ -526,6 +526,102 @@ const googleSignIn = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Delete user account and all associated data
+ * @route   DELETE /api/auth/account
+ * @access  Private
+ */
+const deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role || 'client';
+
+    console.log('🗑️ [DELETE_ACCOUNT] Request received for user:', userId);
+    console.log('🗑️ [DELETE_ACCOUNT] User role:', userRole);
+
+    // Delete user's bookings
+    console.log('🗑️ [DELETE_ACCOUNT] Deleting bookings...');
+    const bookingsSnapshot = await db.collection('bookings')
+      .where('userId', '==', userId)
+      .get();
+    
+    const bookingDeletes = [];
+    bookingsSnapshot.forEach((doc) => {
+      bookingDeletes.push(doc.ref.delete());
+    });
+    await Promise.all(bookingDeletes);
+    console.log(`🗑️ [DELETE_ACCOUNT] Deleted ${bookingDeletes.length} bookings`);
+
+    // If owner, delete cafes and their bookings
+    if (userRole === 'owner') {
+      console.log('🗑️ [DELETE_ACCOUNT] Deleting owner cafes...');
+      const cafesSnapshot = await db.collection('cafes')
+        .where('ownerId', '==', userId)
+        .get();
+      
+      const cafeDeletes = [];
+      const cafeBookingDeletes = [];
+      
+      for (const cafeDoc of cafesSnapshot.docs) {
+        cafeDeletes.push(cafeDoc.ref.delete());
+        
+        // Delete bookings for this cafe
+        const cafeBookingsSnapshot = await db.collection('bookings')
+          .where('cafeId', '==', cafeDoc.id)
+          .get();
+        
+        cafeBookingsSnapshot.forEach((bookingDoc) => {
+          cafeBookingDeletes.push(bookingDoc.ref.delete());
+        });
+      }
+      
+      await Promise.all([...cafeDeletes, ...cafeBookingDeletes]);
+      console.log(`🗑️ [DELETE_ACCOUNT] Deleted ${cafeDeletes.length} cafes and ${cafeBookingDeletes.length} cafe bookings`);
+    }
+
+    // Delete user's reviews
+    console.log('🗑️ [DELETE_ACCOUNT] Deleting reviews...');
+    const reviewsSnapshot = await db.collection('reviews')
+      .where('userId', '==', userId)
+      .get();
+    
+    const reviewDeletes = [];
+    reviewsSnapshot.forEach((doc) => {
+      reviewDeletes.push(doc.ref.delete());
+    });
+    await Promise.all(reviewDeletes);
+    console.log(`🗑️ [DELETE_ACCOUNT] Deleted ${reviewDeletes.length} reviews`);
+
+    // Delete user document
+    console.log('🗑️ [DELETE_ACCOUNT] Deleting user document...');
+    await db.collection('users').doc(userId).delete();
+    console.log('🗑️ [DELETE_ACCOUNT] User document deleted');
+
+    // Delete Firebase Auth user (this will be handled by frontend, but we can try)
+    try {
+      await auth.deleteUser(userId);
+      console.log('🗑️ [DELETE_ACCOUNT] Firebase Auth user deleted');
+    } catch (error) {
+      console.warn('🗑️ [DELETE_ACCOUNT] Could not delete Firebase Auth user (frontend will handle):', error.message);
+      // Frontend will handle Firebase Auth deletion
+    }
+
+    console.log('🗑️ [DELETE_ACCOUNT] Account deletion completed successfully');
+
+    res.json({
+      success: true,
+      message: 'Account deleted successfully'
+    });
+  } catch (error) {
+    console.error('🗑️ [DELETE_ACCOUNT] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting account',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createProfile,
   logout,
@@ -533,6 +629,7 @@ module.exports = {
   updateProfile,
   changePassword,
   registerFcmToken,
-  googleSignIn
+  googleSignIn,
+  deleteAccount
 };
 

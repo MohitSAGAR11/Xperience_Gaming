@@ -13,6 +13,79 @@ import '../../../core/utils.dart';
 class ClientProfileScreen extends ConsumerWidget {
   const ClientProfileScreen({super.key});
 
+  static void _showDeleteAccountDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surfaceDark,
+        title: const Text(
+          'Delete Account',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: const Text(
+          'Are you sure you want to delete your account? This action cannot be undone.\n\n'
+          'All your data including bookings, reviews, and profile information will be permanently deleted.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              
+              // Show loading
+              if (context.mounted) {
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (loadingContext) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+
+              final success = await ref.read(authProvider.notifier).deleteAccount();
+              
+              // Close loading dialog first
+              if (context.mounted) {
+                Navigator.of(context).pop(); // Close loading
+              }
+              
+              if (success) {
+                // Get router from provider before any delays
+                final router = ref.read(routerProvider);
+                
+                // Wait a moment to ensure state is cleared and dialogs are closed
+                await Future.delayed(const Duration(milliseconds: 300));
+                
+                // Navigate directly to auth screen, replacing entire stack
+                router.go(Routes.auth);
+              } else {
+                if (context.mounted) {
+                  final error = ref.read(authProvider).error;
+                  SnackbarUtils.showError(
+                    context,
+                    error ?? 'Failed to delete account. Please try again.',
+                  );
+                }
+              }
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
@@ -92,6 +165,15 @@ class ClientProfileScreen extends ConsumerWidget {
               },
             ),
             const SizedBox(height: 32),
+
+            // Delete Account Button
+            CyberOutlineButton(
+              text: 'Delete Account',
+              icon: Icons.delete_forever_outlined,
+              color: AppColors.error,
+              onPressed: () => _showDeleteAccountDialog(context, ref),
+            ),
+            const SizedBox(height: 16),
 
             // Logout Button
             CyberOutlineButton(

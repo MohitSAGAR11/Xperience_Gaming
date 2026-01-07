@@ -460,6 +460,53 @@ class AuthService {
     );
   }
 
+  /// Delete user account and all associated data
+  Future<app_models.AuthResponse> deleteAccount() async {
+    try {
+      AppLogger.d('🗑️ [DELETE_ACCOUNT] Starting account deletion...');
+      
+      // Call backend to delete user data
+      final response = await _apiClient.delete<Map<String, dynamic>>(
+        '/auth/account',
+      );
+
+      if (response.isSuccess) {
+        AppLogger.d('🗑️ [DELETE_ACCOUNT] Backend deletion successful');
+        
+        // Delete Firebase Auth user
+        final firebaseUser = _auth.currentUser;
+        if (firebaseUser != null) {
+          try {
+            await firebaseUser.delete();
+            AppLogger.d('🗑️ [DELETE_ACCOUNT] Firebase Auth user deleted');
+          } catch (e) {
+            AppLogger.e('🗑️ [DELETE_ACCOUNT] Error deleting Firebase Auth user', e);
+            // Continue even if Firebase deletion fails (backend already deleted data)
+          }
+        }
+
+        // Sign out to clear local state
+        await FirebaseService.signOut();
+        
+        return app_models.AuthResponse(
+          success: true,
+          message: 'Account deleted successfully',
+        );
+      }
+
+      return app_models.AuthResponse(
+        success: false,
+        message: response.message ?? 'Failed to delete account',
+      );
+    } catch (e) {
+      AppLogger.e('🗑️ [DELETE_ACCOUNT] Error', e);
+      return app_models.AuthResponse(
+        success: false,
+        message: e.toString(),
+      );
+    }
+  }
+
   /// Change password using Firebase Auth
   Future<PasswordChangeResult> changePassword({
     required String currentPassword,
